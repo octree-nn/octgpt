@@ -1,0 +1,14 @@
+build
+dist
+__pycache__
+*.egg-info/
+.vscode/
+*.pyd
+*.so
+*.octree
+*.points
+*.xyz
+*.json
+debug.log
+data
+logs

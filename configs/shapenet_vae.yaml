@@ -1,0 +1,89 @@
+SOLVER:
+  gpu: 0,
+  run: train
+
+  logdir: logs/shapenet_vae/vae
+  max_epoch: 900
+  test_every_epoch: 20
+  log_per_iter: 50
+  ckpt_num: 40
+  port: 10001
+
+  # optimizer
+  type: adamw
+  weight_decay: 0.01  # default value of adamw
+  lr: 0.001           # default value of adamw
+
+  # learning rate
+  lr_type: poly
+  step_size: (160,240)
+
+  # sdf
+  resolution: 128       # the resolution used for marching cubes
+  save_sdf: False       # save the sdfs in evaluation
+  sdf_scale: 0.9        # the scale of sdfs
+
+DATA:
+  train:
+    name: shapenet_vae
+
+    # octree building
+    depth: 8
+    full_depth: 3
+    point_scale: 0.5  # the scale of point clouds
+
+    # sdf & color samples
+    volume_sample_num: 50000
+    surface_sample_num: 50000
+
+    # no data augmentation
+    distort: False
+
+    # data loading
+    location: data/ShapeNet-vae
+    filelist: data/ShapeNet-vae/filelist/train_airplane.txt
+    load_sdf: True
+    load_color: True
+    batch_size: 2
+    shuffle: True
+    # num_workers: 0
+
+  test:
+    name: shapenet_vae
+
+    # octree building
+    depth: 8
+    full_depth: 3
+    point_scale: 0.5  # the scale of point clouds
+
+    # sdf & color samples
+    volume_sample_num: 50000
+    surface_sample_num: 50000
+
+    # no data augmentation
+    distort: False
+
+    # data loading
+    location: data/ShapeNet-vae
+    filelist: data/ShapeNet-vae/filelist/val_airplane.txt
+    batch_size: 1
+    load_sdf: True
+    load_color: True
+    shuffle: False
+    # num_workers: 0
+
+
+MODEL:
+  name: graph_vae
+
+  in_channels: 7
+  out_channels: 16
+  resblk_type: basic
+  feature: NDF
+
+  depth_out: 8
+
+LOSS:
+  name: shapenet_vae_color_loss
+  loss_type: sdf_reg_loss
+  kl_weight: 0.1

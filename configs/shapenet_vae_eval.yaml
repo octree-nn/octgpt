@@ -1,0 +1,49 @@
+
+SOLVER:
+  gpu: 0,
+  run: evaluate
+  logdir: logs/shapenet_vae_eval/vae
+  ckpt: logs/shapenet_vae/vae_run0415/checkpoints/00100.model.pth
+
+  # sdf
+  resolution: 360       # the resolution used for marching cubes
+  save_sdf: False       # save the sdfs in evaluation
+  with_color: True      # extract colored mesh
+  sdf_scale: 0.9        # the scale of sdfs
+
+
+DATA:
+  test:
+    name: shapenet_vae
+
+    # octree building
+    depth: 8
+    full_depth: 3
+    point_scale: 0.5  # the scale of point clouds
+
+    # sdf & color samples
+    volume_sample_num: 50000
+    surface_sample_num: 50000
+
+    # no data augmentation
+    distort: False
+
+    # data loading
+    location: data/ShapeNet-vae
+    filelist: data/ShapeNet-vae/filelist/val_airplane.txt
+    batch_size: 1
+    load_sdf: True
+    load_color: True
+    shuffle: False
+    # num_workers: 0
+
+
+MODEL:
+  name: graph_vae
+
+  in_channels: 7
+  out_channels: 16
+  resblk_type: basic
+  feature: NDF
+
+  depth_out: 8
