@@ -193,9 +193,12 @@ class DecodeOctree(torch.nn.Module):
 
 class VQVAE(torch.nn.Module):
 
-  def __init__(self, in_channels: int, n_node_type: int = 7,
-               code_channels: int = 3, out_channels: int = 4,
-               feature: str = 'ND', **kwargs):
+  def __init__(self, in_channels: int,
+               out_channels: int = 4,
+               embedding_sizes: int = 128,
+               embedding_channels: int = 256,
+               feature: str = 'ND',
+               n_node_type: int = 7, **kwargs):
     super().__init__()
     self.feature = feature
     self.config_network()
@@ -208,9 +211,9 @@ class VQVAE(torch.nn.Module):
         self.dec_net_channels, self.dec_net_resblk_nums, predict_octree=True)
 
     self.pre_proj = torch.nn.Linear(
-        self.enc_channels[-1], 2 * code_channels, use_bias=True)
+        self.enc_channels[-1], 2 * embedding_channels, use_bias=True)
     self.post_proj = torch.nn.Linear(
-        code_channels, self.dec_channels[0], use_bias=True)
+        embedding_channels, self.dec_channels[0], use_bias=True)
 
   def config_network(self):
     self.enc_channels = [24, 32, 32]

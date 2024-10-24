@@ -1,0 +1,15 @@
+torch
+ocnn
+numpy
+tqdm
+yacs
+scipy
+plyfile
+tensorboard
+scikit-image
+trimesh
+wget
+mesh2sdf
+matplotlib
+easydict
+thsolver

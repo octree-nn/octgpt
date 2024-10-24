@@ -1,20 +1,21 @@
 import os
 import torch
 import ocnn
-
+import ognn
 from thsolver import Solver
 from ognn.octreed import OctreeD
 
 import utils
-
+from vqvae import VQVAE
+from datasets import get_shapenet_vae_dataset
 
 class VAESolver(Solver):
 
   def get_model(self, flags):
-    return builder.get_model(flags)
+    return VQVAE(**flags)
 
   def get_dataset(self, flags):
-    return builder.get_dataset(flags)
+    return get_shapenet_vae_dataset(flags)
 
   def batch_to_cuda(self, batch):
     keys = [
@@ -27,8 +28,7 @@ class VAESolver(Solver):
 
   def compute_loss(self, batch, model_out):
     flags = self.FLAGS.LOSS
-    loss_func = builder.get_loss_function(flags)
-    output = loss_func(batch, model_out, flags.loss_type, **flags)
+    output = ognn.loss.shapenet_loss(batch, model_out, flags.loss_type, **flags)
     return output
 
   def model_forward(self, batch):
