@@ -9,6 +9,7 @@ import utils
 from vqvae import VQVAE
 from datasets import get_shapenet_vae_dataset
 
+
 class VAESolver(Solver):
 
   def get_model(self, flags):
@@ -18,9 +19,8 @@ class VAESolver(Solver):
     return get_shapenet_vae_dataset(flags)
 
   def batch_to_cuda(self, batch):
-    keys = [
-        'octree_in', 'octree_gt', 'pos', 'sdf',
-        'grad', 'weight', 'occu', 'color']
+    keys = ['octree_in', 'octree_gt', 'pos', 'sdf',
+            'grad', 'weight', 'occu', 'color']
     for key in keys:
       if key in batch:
         batch[key] = batch[key].cuda()
@@ -33,7 +33,7 @@ class VAESolver(Solver):
 
   def model_forward(self, batch):
     self.batch_to_cuda(batch)
-    octree_in = OctreeD(batch['octree_in'])
+    octree_in = batch['octree_gt']
     octree_gt = OctreeD(batch['octree_gt'])
     model_out = self.model(octree_in, octree_gt, batch['pos'])
 
@@ -55,17 +55,19 @@ class VAESolver(Solver):
   def eval_step(self, batch):
     # forward the model
     depth_out = self.FLAGS.MODEL.depth_out
-    octree_in = OctreeD(batch['octree_in'].cuda())
+    octree_in = OctreeD(batch['octree'].cuda())
     octree_out = self._init_octree_out(octree_in, depth_out)
     output = self.model.forward(octree_in, octree_out, update_octree=True)
 
     # extract the mesh
     filename = batch['filename'][0]
     pos = filename.rfind('.')
-    if pos != -1: filename = filename[:pos]  # remove the suffix
+    if pos != -1:
+      filename = filename[:pos]  # remove the suffix
     filename = os.path.join(self.logdir, filename + '.obj')
     folder = os.path.dirname(filename)
-    if not os.path.exists(folder): os.makedirs(folder)
+    if not os.path.exists(folder):
+      os.makedirs(folder)
     bbmin, bbmax = self._get_bbox(batch)
     utils.create_mesh(
         output['neural_mpu'], filename, size=self.FLAGS.SOLVER.resolution,

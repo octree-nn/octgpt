@@ -83,6 +83,6 @@ MODEL:
   feature: ND
 
 LOSS:
-  name: shapenet_vae_color_loss
+  name: shapenet_vae_loss
   loss_type: sdf_reg_loss
   kl_weight: 0.1

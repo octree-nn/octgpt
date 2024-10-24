@@ -1,5 +1,5 @@
-
 import os
+import ocnn
 import torch
 import numpy as np
 
@@ -28,17 +28,15 @@ class TransformShape:
     # get the input
     points = torch.from_numpy(sample['points']).float()
     normals = torch.from_numpy(sample['normals']).float()
-    colors = torch.from_numpy(sample['colors']).float()
     points = points / self.points_scale  # scale to [-1.0, 1.0]
 
     # transform points to octree
-    features = colors if self.flags.load_color else None
-    points_gt = Points(points=points, normals=normals, features=features)
+    points_gt = Points(points=points, normals=normals)
     points_gt.clip(min=-1, max=1)
     octree_gt = self.points2octree(points_gt)
 
     # construct the output dict
-    return {'octree_in': octree_gt, 'octree_gt': octree_gt, 'points_in': points}
+    return {'octree': octree_gt}
 
   def sample_volume(self, sample):
     sdf = sample['sdf']
@@ -49,20 +47,17 @@ class TransformShape:
     points = torch.from_numpy(points[rand_idx]).float()
     sdf = torch.from_numpy(sdf[rand_idx]).float()
     grad = torch.from_numpy(grad[rand_idx]).float()
-    color = torch.zeros(self.volume_sample_num, 3)
-    return {'pos': points, 'sdf': sdf, 'grad': grad, 'color': color}
+    return {'pos': points, 'sdf': sdf, 'grad': grad}
 
   def sample_surface(self, sample):
     normals = sample['normals']
-    colors = sample['colors']
     points = sample['points'] / self.points_scale  # to [-1, 1]
 
     rand_idx = np.random.choice(points.shape[0], size=self.surface_sample_num)
     points = torch.from_numpy(points[rand_idx]).float()
-    colors = torch.from_numpy(colors[rand_idx]).float()
     normals = torch.from_numpy(normals[rand_idx]).float()
     sdf = torch.zeros(self.surface_sample_num)
-    return {'pos': points, 'sdf': sdf, 'grad': normals, 'color': colors}
+    return {'pos': points, 'sdf': sdf, 'grad': normals}
 
   def __call__(self, sample, idx):
     output = self.process_points_cloud(sample['point_cloud'])
@@ -71,8 +66,6 @@ class TransformShape:
     surface = self.sample_surface(sample['point_cloud'])
     for key in samples.keys():
       samples[key] = torch.cat([samples[key], surface[key]], dim=0)
-    if not self.flags.load_color:
-      samples.pop('color', None)
 
     output.update(samples)
     return output
@@ -84,20 +77,15 @@ class ReadFile:
     self.load_color = load_color
 
   def __call__(self, filename):
+    # load the input point cloud
     filename_pc = os.path.join(filename, 'pointcloud.npz')
     raw = np.load(filename_pc)
     point_cloud = {'points': raw['points'], 'normals': raw['normals']}
 
+    # load the target sdfs and gradients
     filename_sdf = os.path.join(filename, 'sdf.npz')
     raw = np.load(filename_sdf)
     sdf = {'points': raw['points'], 'grad': raw['grad'], 'sdf': raw['sdf']}
-
-    if self.load_color:
-      filename_color = os.path.join(filename, 'color.npz')
-      raw = np.load(filename_color)
-      point_cloud['colors'] = raw['colors']  # colors of the input point clouds
-    else:
-      point_cloud['colors'] = np.zeros_like(point_cloud['normals'])
 
     return {'point_cloud': point_cloud, 'sdf': sdf}
 
@@ -116,7 +104,6 @@ def collate_func(batch):
       output[key] = torch.cat(output[key], dim=0)
 
   return output
-
 
 
 def get_shapenet_vae_dataset(flags):
