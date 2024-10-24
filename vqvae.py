@@ -18,13 +18,16 @@ class Encoder(torch.nn.Module):
                resblk_nums: List[int] = [1, 1],
                groups: int = 32, **kwargs):
     super().__init__()
-    self.stage_num = len(channels) - 1
+    self.stage_num = len(channels)
+    self.delta_depth = self.stage_num - 1
+
     self.conv1 = ocnn.modules.OctreeConvGnRelu(in_channels, channels[0], groups)
     self.blocks = torch.nn.ModuleList([ocnn.modules.OctreeResBlocks(
-        channels[i], channels[i], resblk_nums[i], ocnn.modules.OctreeResBlockGn)
+        channels[i], channels[i], resblk_nums[i], bottleneck=2, nempty=False,
+        resblk=ocnn.modules.OctreeResBlockGn, use_checkpoint=True)
         for i in range(self.stage_num)])
     self.downsample = torch.nn.ModuleList([ocnn.modules.OctreeConvGnRelu(
-        channels[i], channels[i+1], groups, kernel_size=2, stride=2)
+        channels[i], channels[i+1], groups, kernel_size=[2], stride=2)
         for i in range(self.stage_num - 1)])  # Note: self.stage_num - 1
     # self.project = torch.nn.Linear(channels[-1], h_channels, use_bias=True)
 
@@ -198,14 +201,14 @@ class VQVAE(torch.nn.Module):
                embedding_sizes: int = 128,
                embedding_channels: int = 256,
                feature: str = 'ND',
+               groups: int = 32,
                n_node_type: int = 7, **kwargs):
     super().__init__()
     self.feature = feature
     self.config_network()
 
     self.encoder = Encoder(
-        in_channels, n_node_type, self.enc_channels, self.enc_resblk_nums,
-        self.enc_net_channels, self.enc_net_resblk_nums)
+        in_channels, self.enc_channels, self.enc_resblk_nums, groups)
     self.decoder = Decoder(
         out_channels, n_node_type, self.dec_channels, self.dec_resblk_nums,
         self.dec_net_channels, self.dec_net_resblk_nums, predict_octree=True)
@@ -218,8 +221,6 @@ class VQVAE(torch.nn.Module):
   def config_network(self):
     self.enc_channels = [24, 32, 32]
     self.enc_resblk_nums = [1, 1, 1]
-    self.enc_net_channels = [32, 64, 256]
-    self.enc_net_resblk_nums = [1, 1, 1]
 
     self.dec_channels = [32, 32, 24]
     self.dec_resblk_nums = [1, 1, 1]
