@@ -34,10 +34,10 @@ class Encoder(torch.nn.Module):
   def forward(self, data: torch.Tensor, octree: Octree, depth: int):
     out = self.conv1(data, octree, depth)
     for i in range(self.stage_num):
-      depthi = depth - i
-      out = self.blocks[i](out, octree, depthi)
+      di = depth - i
+      out = self.blocks[i](out, octree, di)
       if i < self.stage_num - 1:
-        out = self.downsample[i](out, octree, depthi)
+        out = self.downsample[i](out, octree, di)
     # out = self.project(out)
     return out
 
@@ -108,20 +108,20 @@ class TinyUNet(torch.nn.Module):
     out = dict()
     out[depth] = data
     for i in range(self.stage_num):
-      d = depth - i
-      out[d] = self.encoder_blocks[i](out[d], octree, d)
+      di = depth - i
+      out[di] = self.encoder_blocks[i](out[di], octree, di)
       if i < self.stage_num - 1:
-        out[d-1] = self.downsample[i](out[d], octree, d)
+        out[di-1] = self.downsample[i](out[di], octree, di)
     return out
 
   def decoder(self, datas: torch.Tensor, octree: OctreeD, depth: int):
     out = datas[depth]
     for i in range(self.stage_num):
-      d = depth + i
-      out = self.decoder_blocks[i](out, octree, d)
+      di = depth + i
+      out = self.decoder_blocks[i](out, octree, di)
       if i < self.stage_num - 1:
-        out = self.upsample[i](out, octree, d)
-        out = out + datas[d+1]  # skip connections
+        out = self.upsample[i](out, octree, di)
+        out = out + datas[di+1]  # skip connections
     return out
 
   def forward(self, data: torch.Tensor, octree: OctreeD, depth: int):
@@ -167,29 +167,29 @@ class DecodeOctree(torch.nn.Module):
               update_octree: bool = False):
     logits, signals = dict(), dict()
     for i in range(self.stage_num):
-      d = depth + i
-      data = self.blocks[i](data, octree, d)
+      di = depth + i
+      data = self.blocks[i](data, octree, di)
 
       # predict the splitting label and signal
       if self.predict_octree:
-        logit = self.predict[i](data, octree, d)
-        nnum = octree.nnum[d]
-        logits[d] = logit[-nnum:]
+        logit = self.predict[i](data, octree, di)
+        nnum = octree.nnum[di]
+        logits[di] = logit[-nnum:]
 
       # regress signals and pad zeros to non-leaf nodes
-      signal = self.regress[i](data, octree, d)
-      signals[d] = self.graph_pad(signal, octree, d)
+      signal = self.regress[i](data, octree, di)
+      signals[di] = self.graph_pad(signal, octree, di)
 
       # update the octree according to predicted labels
       if update_octree and self.predict_octree:
-        split = logits[d].argmax(1).int()
-        octree.octree_split(split, d)
+        split = logits[di].argmax(1).int()
+        octree.octree_split(split, di)
         if i < self.stage_num - 1:
-          octree.octree_grow(d + 1)
+          octree.octree_grow(di + 1)
 
       # upsample
       if i < self.stage_num - 1:
-        data = self.upsample[i](data, octree, d)
+        data = self.upsample[i](data, octree, di)
 
     return {'logits': logits, 'signals': signals, 'octree_out': octree}
 
@@ -214,38 +214,34 @@ class VQVAE(torch.nn.Module):
         self.dec_net_channels, self.dec_net_resblk_nums, predict_octree=True)
 
     self.pre_proj = torch.nn.Linear(
-        self.enc_channels[-1], 2 * embedding_channels, use_bias=True)
+        self.enc_channels[-1], embedding_channels, bias=True)
     self.post_proj = torch.nn.Linear(
-        embedding_channels, self.dec_channels[0], use_bias=True)
+        embedding_channels, self.dec_channels[0], bias=True)
 
   def config_network(self):
-    self.enc_channels = [24, 32, 32]
+    self.enc_channels = [32, 32, 64]
     self.enc_resblk_nums = [1, 1, 1]
 
-    self.dec_channels = [32, 32, 24]
+    self.dec_channels = [64, 32, 32]
     self.dec_resblk_nums = [1, 1, 1]
-    self.dec_net_channels = [32, 64, 256]
+    self.dec_net_channels = [64, 128, 256]
     self.dec_net_resblk_nums = [1, 1, 1]
 
-  def forward(self, octree_in: OctreeD, octree_out: OctreeD,
+  def forward(self, octree_in: Octree, octree_out: OctreeD,
               pos: torch.Tensor = None, update_octree: bool = False):
     code = self.extract_code(octree_in)
 
-    # TODO: Add vqvae here
-    # posterior = DiagonalGaussianDistribution(code)
-    # z = posterior.sample()
+    # TODO: Add vqvae loss here
 
-    # The input paramter `octree_out` is not used. It is just for compatibility
-    # with the other models.
     code_depth = octree_in.depth - self.encoder.delta_depth
-    output = self.decode_code(code, code_depth, octree_in, pos, update_octree)
+    output = self.decode_code(code, code_depth, octree_out, pos, update_octree)
 
-    # output['kl_loss'] = posterior.kl().mean()
+    # output['vq_loss'] = posterior.kl().mean()
     # output['code_max'] = z.max()
     # output['code_min'] = z.min()
     return output
 
-  def extract_code(self, octree_in: OctreeD):
+  def extract_code(self, octree_in: Octree):
     depth = octree_in.depth
     data = octree_in.get_input_feature(feature=self.feature)
     conv = self.encoder(data, octree_in, depth)
@@ -254,7 +250,14 @@ class VQVAE(torch.nn.Module):
 
   def decode_code(self, code: torch.Tensor, code_depth: int, octree: OctreeD,
                   pos: torch.Tensor = None, update_octree: bool = False):
-    data = self.post_proj(code)   # project the vae code to features
+    # project the vae code to features
+    data = self.post_proj(code)
+
+    # `data` is defined on the octree, here we need pad zeros to be compatible
+    # with the dual octree
+    data = octree.pad_zeros(data, code_depth)
+
+    # run the decoder defined on dual octrees
     output = self.decoder(data, octree, code_depth, update_octree)
 
     # setup mpu

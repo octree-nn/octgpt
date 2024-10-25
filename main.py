@@ -19,7 +19,7 @@ class VAESolver(Solver):
     return get_shapenet_vae_dataset(flags)
 
   def batch_to_cuda(self, batch):
-    keys = ['octree_in', 'octree_gt', 'pos', 'sdf',
+    keys = ['octree', 'octree_in', 'octree_gt', 'pos', 'sdf',
             'grad', 'weight', 'occu', 'color']
     for key in keys:
       if key in batch:
@@ -33,8 +33,8 @@ class VAESolver(Solver):
 
   def model_forward(self, batch):
     self.batch_to_cuda(batch)
-    octree_in = batch['octree_gt']
-    octree_gt = OctreeD(batch['octree_gt'])
+    octree_in = batch['octree']
+    octree_gt = OctreeD(batch['octree'])
     model_out = self.model(octree_in, octree_gt, batch['pos'])
 
     output = self.compute_loss(batch, model_out)
