@@ -108,7 +108,7 @@ def collate_func(batch):
 
 def get_shapenet_vae_dataset(flags):
   transform = TransformShape(flags)
-  read_file = ReadFile(flags.load_color)
+  read_file = ReadFile()
   dataset = Dataset(flags.location, flags.filelist, transform,
                     read_file=read_file, in_memory=flags.in_memory)
   return dataset, collate_func
