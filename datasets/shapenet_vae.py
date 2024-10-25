@@ -36,7 +36,7 @@ class TransformShape:
     octree_gt = self.points2octree(points_gt)
 
     # construct the output dict
-    return {'octree': octree_gt}
+    return {'octree': octree_gt, 'points_in': points}
 
   def sample_volume(self, sample):
     sdf = sample['sdf']

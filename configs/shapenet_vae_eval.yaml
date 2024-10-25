@@ -3,12 +3,12 @@ SOLVER:
   gpu: 0,
   run: evaluate
   logdir: logs/shapenet_vae_eval/vae
-  ckpt: logs/shapenet_vae/vae_run0415/checkpoints/00100.model.pth
+  ckpt: logs/shapenet_vae/vae_10251120/best_model.pth
 
   # sdf
-  resolution: 360       # the resolution used for marching cubes
+  resolution: 300       # the resolution used for marching cubes
   save_sdf: False       # save the sdfs in evaluation
-  with_color: True      # extract colored mesh
+  with_color: False     # extract colored mesh
   sdf_scale: 0.9        # the scale of sdfs
 
 
@@ -22,8 +22,8 @@ DATA:
     point_scale: 0.5  # the scale of point clouds
 
     # sdf & color samples
-    volume_sample_num: 50000
-    surface_sample_num: 50000
+    volume_sample_num: 10000
+    surface_sample_num: 10000
 
     # no data augmentation
     distort: False
@@ -39,11 +39,12 @@ DATA:
 
 
 MODEL:
-  name: graph_vae
+  name: vae
 
-  in_channels: 7
-  out_channels: 16
-  resblk_type: basic
-  feature: NDF
+  in_channels: 4
+  out_channels: 4
+  embedding_sizes: 128
+  embedding_channels: 64
+  feature: ND
 
   depth_out: 8

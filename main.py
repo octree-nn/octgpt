@@ -54,9 +54,8 @@ class VAESolver(Solver):
 
   def eval_step(self, batch):
     # forward the model
-    depth_out = self.FLAGS.MODEL.depth_out
-    octree_in = OctreeD(batch['octree'].cuda())
-    octree_out = self._init_octree_out(octree_in, depth_out)
+    octree_in = batch['octree'].cuda()
+    octree_out = OctreeD(octree_in)
     output = self.model.forward(octree_in, octree_out, update_octree=True)
 
     # extract the mesh

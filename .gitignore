@@ -9,6 +9,7 @@ __pycache__
 *.points
 *.xyz
 *.json
+*.sh
 debug.log
 data
 logs
