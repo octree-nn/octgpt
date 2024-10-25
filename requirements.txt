@@ -1,5 +1,7 @@
 torch
 ocnn
+ognn
+thsolver
 numpy
 tqdm
 yacs
@@ -12,4 +14,3 @@ wget
 mesh2sdf
 matplotlib
 easydict
-thsolver
