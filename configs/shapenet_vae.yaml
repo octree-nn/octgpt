@@ -79,10 +79,10 @@ MODEL:
   in_channels: 4
   out_channels: 4
   embedding_sizes: 128
-  embedding_channels: 64
+  embedding_channels: 256
   feature: ND
 
 LOSS:
   name: shapenet_vae_loss
   loss_type: sdf_reg_loss
-  kl_weight: 0.1
+  vq_weight: 0.5

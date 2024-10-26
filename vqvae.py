@@ -198,8 +198,8 @@ class VQVAE(torch.nn.Module):
 
   def __init__(self, in_channels: int,
                out_channels: int = 4,
-               embedding_num: int = 128,
-               embedding_channels: int = 256,
+               embedding_sizes: int = 128,
+               embedding_channels: int = 64,
                feature: str = 'ND',
                groups: int = 32,
                n_node_type: int = 7, **kwargs):
@@ -212,7 +212,7 @@ class VQVAE(torch.nn.Module):
     self.decoder = Decoder(
         out_channels, n_node_type, self.dec_channels, self.dec_resblk_nums,
         self.dec_net_channels, self.dec_net_resblk_nums, predict_octree=True)
-    self.quantizer = VectorQuantizer(embedding_num, embedding_channels)
+    self.quantizer = VectorQuantizer(embedding_sizes, embedding_channels)
 
     self.pre_proj = torch.nn.Linear(
         self.enc_channels[-1], embedding_channels, bias=True)

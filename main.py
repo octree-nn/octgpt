@@ -29,6 +29,7 @@ class VAESolver(Solver):
   def compute_loss(self, batch, model_out):
     flags = self.FLAGS.LOSS
     output = ognn.loss.shapenet_loss(batch, model_out, flags.loss_type, **flags)
+    output['vq_loss'] = flags.vq_weight * model_out['vq_loss']
     return output
 
   def model_forward(self, batch):
