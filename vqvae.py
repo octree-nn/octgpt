@@ -198,7 +198,7 @@ class VQVAE(torch.nn.Module):
 
   def __init__(self, in_channels: int,
                out_channels: int = 4,
-               embedding_sizes: int = 128,
+               embedding_num: int = 128,
                embedding_channels: int = 256,
                feature: str = 'ND',
                groups: int = 32,
@@ -212,6 +212,7 @@ class VQVAE(torch.nn.Module):
     self.decoder = Decoder(
         out_channels, n_node_type, self.dec_channels, self.dec_resblk_nums,
         self.dec_net_channels, self.dec_net_resblk_nums, predict_octree=True)
+    self.quantizer = VectorQuantizer(embedding_num, embedding_channels)
 
     self.pre_proj = torch.nn.Linear(
         self.enc_channels[-1], embedding_channels, bias=True)
@@ -230,15 +231,10 @@ class VQVAE(torch.nn.Module):
   def forward(self, octree_in: Octree, octree_out: OctreeD,
               pos: torch.Tensor = None, update_octree: bool = False):
     code = self.extract_code(octree_in)
-
-    # TODO: Add vqvae loss here
-
+    zq, vq_loss = self.quantizer(code)
     code_depth = octree_in.depth - self.encoder.delta_depth
-    output = self.decode_code(code, code_depth, octree_out, pos, update_octree)
-
-    # output['vq_loss'] = posterior.kl().mean()
-    # output['code_max'] = z.max()
-    # output['code_min'] = z.min()
+    output = self.decode_code(zq, code_depth, octree_out, pos, update_octree)
+    output['vq_loss'] = vq_loss
     return output
 
   def extract_code(self, octree_in: Octree):
@@ -271,3 +267,37 @@ class VQVAE(torch.nn.Module):
     # create the mpu wrapper
     output['neural_mpu'] = lambda pos: neural_mpu(pos)[depth_out]
     return output
+
+
+class VectorQuantizer(torch.nn.Module):
+
+  def __init__(self, K: int, D: int, beta: float = 0.5):
+    super().__init__()
+    self.beta = beta
+    self.embedding = torch.nn.Embedding(K, D)
+    self.embedding.weight.data.uniform_(-1.0 / K, 1.0 / K)
+
+  def get_embedding_indices(self, z: torch.Tensor):
+    # distances from z to embeddings e,
+    # z: (N, D), e: (K, D)
+    # (z - e)^2 = z^2 + e^2 - 2 e * z
+    d = (torch.sum(z**2, dim=1, keepdim=True) +
+         torch.sum(self.embedding.weight**2, dim=1) -
+         2 * torch.matmul(z, self.embedding.weight.T))
+    out = torch.argmin(d, dim=1)
+    return out
+
+  def forward(self, z):
+    # get the closest embedding indices
+    indices = self.get_embedding_indices(z)
+
+    # get the embeddings
+    zq = self.embedding(indices)
+
+    # compute loss for the embedding
+    loss = (self.beta * torch.mean((zq.detach() - z)**2) +
+            torch.mean((zq - z.detach())**2))
+
+    # preserve gradients: Straight-Through gradients
+    zq = z + (zq - z).detach()
+    return zq, loss
