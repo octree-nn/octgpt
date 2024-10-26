@@ -40,8 +40,8 @@ DATA:
     distort: False
 
     # data loading
-    location: data/ShapeNet-vae
-    filelist: data/ShapeNet-vae/filelist/train_airplane.txt
+    location: data/ShapeNet/dataset_256
+    filelist: data/ShapeNet/filelist/train_airplane.txt
     # location: data/ShapeNet/dataset
     # filelist: data/ShapeNet/filelist/train.txt
     load_sdf: True
@@ -64,8 +64,8 @@ DATA:
     distort: False
 
     # data loading
-    location: data/ShapeNet-vae
-    filelist: data/ShapeNet-vae/filelist/val_airplane.txt
+    location: data/ShapeNet/dataset_256
+    filelist: data/ShapeNet/filelist/val_airplane.txt
     # location: data/ShapeNet/dataset
     # filelist: data/ShapeNet/filelist/val.txt
     batch_size: 1
