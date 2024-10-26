@@ -301,3 +301,24 @@ class VectorQuantizer(torch.nn.Module):
     # preserve gradients: Straight-Through gradients
     zq = z + (zq - z).detach()
     return zq, loss
+
+
+class VectorQuantizerG(torch.nn.Module):
+
+  def __init__(self, K: int, D: int, beta: float = 0.5, G: int = 2):
+    super().__init__()
+    C = D // G
+    self.groups = G
+    self.channels_per_group = C
+    self.quantizers = torch.nn.ModuleList([
+        VectorQuantizer(K, C, beta) for _ in range(G)])
+
+  def forward(self, z):
+    zqs = [None] * self.groups
+    losses = [None] * self.groups
+    z = z.view(-1, self.groups, self.channels_per_group)
+    for i in range(self.groups):
+      zqs[i], losses[i] = self.quantizers[i](z[:, i])
+    zq = torch.cat(zqs, dim=1)
+    loss = torch.mean(torch.stack(losses))
+    return zq, loss
