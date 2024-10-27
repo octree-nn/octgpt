@@ -91,7 +91,7 @@ class OctarSolver(Solver):
     # rewrite the test_epoch function as generate
     def test_epoch(self, epoch):
         self.model.eval()
-        self.generate_iter(0)
+        self.generate_iter(epoch)
 
     def generate(self):
         self.manual_seed()
@@ -103,27 +103,34 @@ class OctarSolver(Solver):
 
     def generate_iter(self, iter):
         # forward the model
-        octree_out = ocnn.octree.init_octree(
-            self.depth, self.full_depth, 1, self.device)
-        octree_out, vq_indices = self.model_module.generate(
-            octree_out, depth_low=self.full_depth, depth_high=self.depth_stop,
-            vqvae=self.vqvae_module if self.enable_vqvae else None)
+        # octree_out = ocnn.octree.init_octree(
+        #     self.depth_stop, self.full_depth, 1, self.device)
+        # octree_out, vq_indices = self.model_module.generate(
+        #     octree_out, depth_low=self.full_depth, depth_high=self.depth_stop,
+        #     vqvae=self.vqvae_module if self.enable_vqvae else None)
 
-        for d in range(self.full_depth + 1, self.depth_stop):
+        octree_out, vq_indices = torch.load("mytools/1.pth")
+        for d in range(self.full_depth + 1, self.depth_stop + 1):
             utils.export_octree(octree_out, d, os.path.join(
                 self.logdir, f'results/octree_depth{d}'))
 
         # decode the octree
         if self.enable_vqvae:
+            for d in range(self.depth_stop+1, self.depth):
+                split_zero_d = torch.zeros(
+                    octree_out.nnum[d], device=self.device).long()
+                octree_out.octree_split(split_zero_d, d)
+                octree_out.octree_grow(d + 1)
+            doctree_out = OctreeD(octree_out)
             zq = self.vqvae_module.quantizer.embedding(vq_indices)
             output = self.vqvae_module.decode_code(
-                zq, self.depth_stop, OctreeD(octree_out), update_octree=True)
+                zq, self.depth_stop, doctree_out, update_octree=True)
 
             # extract the mesh
             utils.create_mesh(
                 output['neural_mpu'], os.path.join(self.logdir, f"results/{iter}.obj"), size=self.FLAGS.SOLVER.resolution,
                 bbmin=-self.FLAGS.SOLVER.sdf_scale, bbmax=self.FLAGS.SOLVER.sdf_scale, mesh_scale=self.FLAGS.DATA.test.point_scale,
-                save_sdf=self.FLAGS.SOLVER.save_sdf, with_color=self.FLAGS.SOLVER.with_color)
+                save_sdf=self.FLAGS.SOLVER.save_sdf)
 
     def _init_octree_out(self, octree_in, depth_out):
         full_depth = octree_in.full_depth    # grow octree to full_depth
