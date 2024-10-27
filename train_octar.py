@@ -28,6 +28,7 @@ class OctarSolver(Solver):
         # load the pretrained vqvae
         checkpoint = torch.load(flags.vqvae_ckpt)
         vqvae.load_state_dict(checkpoint)
+        print("Load VQVAE from", flags.vqvae_ckpt)
 
         model.cuda(device=self.device)
         vqvae.cuda(device=self.device)
@@ -49,8 +50,8 @@ class OctarSolver(Solver):
             self.model = model
             self.vqvae = vqvae
 
-        if self.is_master:
-            print(model)
+        # if self.is_master:
+        #     print(model)
 
     def get_dataset(self, flags):
         return get_shapenet_vae_dataset(flags)
@@ -66,16 +67,19 @@ class OctarSolver(Solver):
         self.model.train()
         self.batch_to_cuda(batch)
         octree_in = batch['octree']
-        vq_code = self.vqvae.extract_code(octree_in)
-        zq, indices, _ = self.vqvae.quantizer(vq_code)
-        output = self.vqvae.decode_code(zq, self.depth_stop, OctreeD(octree_in), update_octree=True)
-        utils.create_mesh(output['neural_mpu'], os.path.join("mytools/0.obj"))
+        
+        # For testing VQVAE
+        # vq_code = self.vqvae.extract_code(octree_in)
+        # zq, indices, _ = self.vqvae.quantizer(vq_code)
+        # output = self.vqvae.decode_code(zq, self.depth_stop, OctreeD(octree_in), update_octree=True)
+        # utils.create_mesh(output['neural_mpu'], os.path.join("mytools/0.obj"))
 
         split_seq = utils.octree2seq(
             octree_in, self.full_depth, self.depth_stop).long()
         output = self.model(split_seq, octree_in,
                             self.full_depth, self.depth_stop, vqvae=self.vqvae)
-
+        losses = [val for key, val in output.items() if 'loss' in key]
+        output['loss'] = torch.sum(torch.stack(losses))
         return output
 
     def train_step(self, batch):
@@ -83,6 +87,11 @@ class OctarSolver(Solver):
         output = {'train/' + key: val for key, val in output.items()}
         return output
 
+    def test_step(self, batch):
+        self.generate_iter(0)
+        output = {'loss': torch.tensor(0.0).to(self.device)}
+        return output
+    
     def generate(self):
         self.manual_seed()
         self.config_model()

@@ -166,11 +166,11 @@ class RPE(torch.nn.Module):
             self.num_heads, self.pos_bnd, self.dilation)    # noqa
 
 class SinPosEmb(torch.nn.Module):
-    def __init__(self, n_embed, num_depth=3):
+    def __init__(self, n_embed, num_depth=4):
         super().__init__()
         self.n_embed = n_embed
         self.pos_emb = PositionalEncoding3D(n_embed)
-        self.depth_emb = torch.nn.Embedding(3, n_embed)
+        self.depth_emb = torch.nn.Embedding(num_depth, n_embed)
     
     def forward(self, octree, depth_low, depth_high):
         position_embeddings = []

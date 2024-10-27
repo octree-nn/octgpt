@@ -48,10 +48,11 @@ class GPT(nn.Module):
                  n_head=8,
                  n_layer=8,
                  num_classes=1,
+                 num_depth=4,
                  split_size=2,
                  vq_size=128,
                  embed_drop=0.1,
-                 **kwargs):
+                  **kwargs):
         super(GPT, self).__init__()
         self.n_embed = n_embed
 
@@ -140,7 +141,8 @@ class GPT(nn.Module):
         cond = self.class_emb(category)  # 1 x C
 
         token_embeddings = cond  # 1 x C
-        split, vq_indices = None, None
+        split = torch.tensor([], device=octree.device).long()
+        vq_indices = torch.tensor([], device=octree.device).long()
         
         for d in range(depth_low, depth_high + 1):
             # if not need to generate vq code
@@ -162,12 +164,12 @@ class GPT(nn.Module):
                 if d < depth_high:
                     split_logits = self.split_head(x[-1:, :])
                     ix = sample(split_logits)
-                    split = torch.cat((split, ix), dim=0)
+                    split = torch.cat([split, ix], dim=0)
                     token_embeddings = torch.cat([token_embeddings, self.split_emb(ix)], dim=0)
                 else:
                     vq_logits = self.vq_head(x[-1:, :])
                     ix = sample(vq_logits)
-                    vq_indices = torch.cat((vq_indices, ix), dim=0)
+                    vq_indices = torch.cat([vq_indices, ix], dim=0)
                     token_embeddings = torch.cat([token_embeddings, vqvae.quantizer.embedding(ix)], dim=0)
             if d < depth_high:
                 octree = seq2octree(octree, split[-nnum_d:], d, d + 1)
