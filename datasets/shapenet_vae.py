@@ -62,32 +62,38 @@ class TransformShape:
   def __call__(self, sample, idx):
     output = self.process_points_cloud(sample['point_cloud'])
 
-    samples = self.sample_volume(sample['sdf'])
-    surface = self.sample_surface(sample['point_cloud'])
-    for key in samples.keys():
-      samples[key] = torch.cat([samples[key], surface[key]], dim=0)
+    if "load_sdf" in self.flags and self.flags.load_sdf:
+      samples = self.sample_volume(sample['sdf'])
+      surface = self.sample_surface(sample['point_cloud'])
+      for key in samples.keys():
+        samples[key] = torch.cat([samples[key], surface[key]], dim=0)
 
-    output.update(samples)
+      output.update(samples)
     return output
 
 
 class ReadFile:
 
-  def __init__(self, load_color=False):
-    self.load_color = load_color
+  def __init__(self, flags):
+    self.flags = flags
 
   def __call__(self, filename):
     # load the input point cloud
-    filename_pc = os.path.join(filename, 'pointcloud.npz')
-    raw = np.load(filename_pc)
-    point_cloud = {'points': raw['points'], 'normals': raw['normals']}
+    output = {}
+    if "load_pointcloud" in self.flags and self.flags.load_pointcloud:
+      filename_pc = os.path.join(filename, 'pointcloud.npz')
+      raw = np.load(filename_pc)
+      point_cloud = {'points': raw['points'], 'normals': raw['normals']}
+      output['point_cloud'] = point_cloud
 
     # load the target sdfs and gradients
-    filename_sdf = os.path.join(filename, 'sdf.npz')
-    raw = np.load(filename_sdf)
-    sdf = {'points': raw['points'], 'grad': raw['grad'], 'sdf': raw['sdf']}
+    if "load_sdf" in self.flags and self.flags.load_sdf:
+      filename_sdf = os.path.join(filename, 'sdf.npz')
+      raw = np.load(filename_sdf)
+      sdf = {'points': raw['points'], 'grad': raw['grad'], 'sdf': raw['sdf']}
+      output['sdf'] = sdf
 
-    return {'point_cloud': point_cloud, 'sdf': sdf}
+    return output
 
 
 def collate_func(batch):
@@ -108,7 +114,7 @@ def collate_func(batch):
 
 def get_shapenet_vae_dataset(flags):
   transform = TransformShape(flags)
-  read_file = ReadFile()
+  read_file = ReadFile(flags)
   dataset = Dataset(flags.location, flags.filelist, transform,
                     read_file=read_file, in_memory=flags.in_memory)
   return dataset, collate_func

@@ -231,7 +231,7 @@ class VQVAE(torch.nn.Module):
   def forward(self, octree_in: Octree, octree_out: OctreeD,
               pos: torch.Tensor = None, update_octree: bool = False):
     code = self.extract_code(octree_in)
-    zq, vq_loss = self.quantizer(code)
+    zq, indices, vq_loss = self.quantizer(code)
     code_depth = octree_in.depth - self.encoder.delta_depth
     output = self.decode_code(zq, code_depth, octree_out, pos, update_octree)
     output['vq_loss'] = vq_loss
@@ -300,12 +300,12 @@ class VectorQuantizer(torch.nn.Module):
 
     # preserve gradients: Straight-Through gradients
     zq = z + (zq - z).detach()
-    return zq, loss
+    return zq, indices, loss
 
 
 class VectorQuantizerG(torch.nn.Module):
 
-  def __init__(self, K: int, D: int, beta: float = 0.5, G: int = 2):
+  def __init__(self, K: int, D: int, beta: float = 0.5, G: int = 4):
     super().__init__()
     C = D // G
     self.groups = G
