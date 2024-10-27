@@ -13,3 +13,5 @@ __pycache__
 debug.log
 data
 logs
+saved_ckpt
+mytools

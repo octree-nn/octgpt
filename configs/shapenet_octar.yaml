@@ -44,7 +44,7 @@ DATA:
     filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
-    batch_size: 2
+    batch_size: 1
     shuffle: True
 
   test:
@@ -77,7 +77,8 @@ MODEL:
   depth: *depth
   full_depth: *full_depth
   depth_stop: 6
-  
+  vqvae_ckpt: saved_ckpt/vqvae_model.pth
+
   VQVAE:
     name: vae
 
@@ -86,6 +87,7 @@ MODEL:
     embedding_sizes: 128
     embedding_channels: 256
     feature: ND
+    
   
 
 LOSS:

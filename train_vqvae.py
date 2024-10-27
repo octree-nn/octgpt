@@ -72,7 +72,7 @@ class VAESolver(Solver):
     utils.create_mesh(
         output['neural_mpu'], filename, size=self.FLAGS.SOLVER.resolution,
         bbmin=bbmin, bbmax=bbmax, mesh_scale=self.FLAGS.DATA.test.point_scale,
-        save_sdf=self.FLAGS.SOLVER.save_sdf, with_color=self.FLAGS.SOLVER.with_color)
+        save_sdf=self.FLAGS.SOLVER.save_sdf)
 
     # save the input point cloud
     filename = filename[:-4] + '.input.ply'

@@ -29,7 +29,7 @@ DATA:
 
     # octree building
     depth: &depth 8
-    full_depth: &full_depth 4
+    full_depth: &full_depth 3
     point_scale: &point_scale 0.5  # the scale of point clouds
 
     # sdf & color samples

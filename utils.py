@@ -150,6 +150,7 @@ def marching_cubes(values, level=0, with_color=False):
 def create_mesh(model, filename, size=256, max_batch=64**3, level=0,
                 bbmin=-0.9, bbmax=0.9, mesh_scale=1.0, save_sdf=False,
                 with_color=False, **kwargs):
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     channel = 1 if not with_color else 4
     values = calc_field_values(model, size, max_batch, bbmin, bbmax, channel)
     vtx, faces, colors = marching_cubes(values, level, with_color)
@@ -234,77 +235,6 @@ def voxel2data(data_full, octree, full_depth):
     x, y, z, b = octree.xyzb(full_depth)
     data = data_full.reshape(batch_size, voxel_size, voxel_size, voxel_size, -1)[b, x, y, z]
     return data
-
-def octree2split(octree, depth_low, depth_high, shift=False):
-    child = octree.children[depth_high - 1]
-    split = (child >= 0).unsqueeze(-1)
-    
-    for d in range(depth_low, depth_high - 1)[::-1]:
-        split_dim = (2 ** (3 * (depth_high - d - 1)))
-        split = split.reshape(-1, split_dim)
-        split = octree_pad(data = split, octree = octree, depth = d)
-
-    split = split.float()
-    if shift:
-        split = 2 * split - 1    # scale to [-1, 1]
-
-    return split
-
-
-def split2octree(octree, split, depth_low, depth_high, threshold = 0.0):
-
-    discrete_split = (split > threshold).float()
-
-    octree_out = copy.deepcopy(octree)
-    for d in range(depth_low, depth_high):
-        split_i = copy.deepcopy(discrete_split)
-        split_dim = 2 ** (3 * (depth_high - d - 1))
-        split_i = split_i.reshape(-1, split_dim)
-        split_i_sum = torch.sum(split_i, dim = 1)
-        label = (split_i_sum > 0).long()
-        discrete_split = split_i[label.bool()]
-        if torch.numel(label) == 0:
-            label = torch.zeros((8,), dtype = torch.long, device = octree.device)
-        octree_out.octree_split(label, depth = d)
-        octree_out.octree_grow(d + 1)
-    return octree_out
-
-def octree2seq(octree, depth_low, depth_high, shift=False):
-    child = octree.children[depth_high - 1]
-    split = (child >= 0).float()
-    
-    seq = []
-    seq.append(split)
-    for d in range(depth_low, depth_high - 1)[::-1]:
-        split_d = split.reshape(-1, 8)
-        split_d = torch.sum(split_d, dim = 1, keepdim=True)
-        label = (split_d > 0).long()
-        split = octree_pad(data = label, octree = octree, depth = d)
-        seq = [split.squeeze(1)] + seq
-    
-    # Reverse the sequence
-    seq = torch.cat(seq, dim = 0)
-
-    if shift:
-        seq = 2 * seq - 1    # scale to [-1, 1]
-
-    return seq
-
-def seq2octree(octree, seq, depth_low, depth_high, threshold = 0.0):
-
-    discrete_seq = (seq > threshold).long()
-
-    octree_out = copy.deepcopy(octree)
-    cur_nnum = 0
-    for d in range(depth_low, depth_high):
-        nnum_d = octree_out.nnum[d]
-        label = copy.deepcopy(discrete_seq[cur_nnum:cur_nnum + nnum_d])
-        cur_nnum += nnum_d
-        if torch.numel(label) == 0:
-            label = torch.zeros((8,), dtype = torch.long, device = octree.device)
-        octree_out.octree_split(label, depth = d)
-        octree_out.octree_grow(d + 1)
-    return octree_out
 
 def voxel2mesh(voxel, threshold=0.4, use_vertex_normal: bool = False):
     verts, faces, vertex_normals = _voxel2mesh(voxel, threshold)
@@ -429,3 +359,78 @@ def export_octree(octree, depth, save_dir = None, index = 0):
             mesh.export(os.path.join(save_dir, f'{index}.obj'))
         else:
             mesh.export(os.path.join(save_dir, f'{index + i}.obj'))
+            
+def octree2split(octree, depth_low, depth_high, shift=False):
+    child = octree.children[depth_high - 1]
+    split = (child >= 0).unsqueeze(-1)
+    
+    for d in range(depth_low, depth_high - 1)[::-1]:
+        split_dim = (2 ** (3 * (depth_high - d - 1)))
+        split = split.reshape(-1, split_dim)
+        split = octree_pad(data = split, octree = octree, depth = d)
+
+    split = split.float()
+    if shift:
+        split = 2 * split - 1    # scale to [-1, 1]
+
+    return split
+
+
+def split2octree(octree, split, depth_low, depth_high, threshold = 0.0):
+
+    discrete_split = (split > threshold).float()
+
+    octree_out = copy.deepcopy(octree)
+    for d in range(depth_low, depth_high):
+        split_i = copy.deepcopy(discrete_split)
+        split_dim = 2 ** (3 * (depth_high - d - 1))
+        split_i = split_i.reshape(-1, split_dim)
+        split_i_sum = torch.sum(split_i, dim = 1)
+        label = (split_i_sum > 0).long()
+        discrete_split = split_i[label.bool()]
+        if torch.numel(label) == 0:
+            label = torch.zeros((8,), dtype = torch.long, device = octree.device)
+        octree_out.octree_split(label, depth = d)
+        octree_out.octree_grow(d + 1)
+    return octree_out
+
+def octree2seq(octree, depth_low, depth_high, shift=False):
+    child = octree.children[depth_high - 1]
+    split = (child >= 0).float()
+    
+    seq = []
+    seq.append(split)
+    for d in range(depth_low, depth_high - 1)[::-1]:
+        split_d = split.reshape(-1, 8)
+        split_d = torch.sum(split_d, dim = 1, keepdim=True)
+        label = (split_d > 0).long()
+        split = octree_pad(data = label, octree = octree, depth = d)
+        seq = [split.squeeze(1)] + seq
+    
+    # Reverse the sequence
+    seq = torch.cat(seq, dim = 0)
+
+    if shift:
+        seq = 2 * seq - 1    # scale to [-1, 1]
+
+    return seq
+
+def seq2octree(octree, seq, depth_low, depth_high, threshold = 0.0):
+
+    discrete_seq = (seq > threshold).long()
+
+    octree_out = copy.deepcopy(octree)
+    cur_nnum = 0
+    for d in range(depth_low, depth_high):
+        nnum_d = octree_out.nnum[d]
+        label = copy.deepcopy(discrete_seq[cur_nnum:cur_nnum + nnum_d])
+        cur_nnum += nnum_d
+        if torch.numel(label) == 0:
+            label = torch.zeros((8,), dtype = torch.long, device = octree.device)
+        octree_out.octree_split(label, depth = d)
+        octree_out.octree_grow(d + 1)
+    return octree_out
+
+def set_requires_grad(model, bool):
+    for p in model.parameters():
+        p.requires_grad = bool
