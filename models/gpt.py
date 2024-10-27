@@ -105,9 +105,9 @@ class GPT(nn.Module):
             x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
             targets = torch.cat([targets, indices], dim=0)
 
-        token_embeddings = torch.cat(
-            [cond, x_token_embeddings], dim=0)  # (1+S) x C
-        embeddings = token_embeddings[:-1] + position_embeddings  # S x C
+        embeddings = torch.cat(
+            [cond, x_token_embeddings], dim=0)[:-1]  # (1+S) x C
+        embeddings = embeddings + position_embeddings[:embeddings.shape[0]]  # S x C
 
         # embeddings = embeddings.unsqueeze(0)
         x = self.drop(embeddings)

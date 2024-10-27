@@ -4,7 +4,7 @@ SOLVER:
 
   logdir: logs/shapenet_vae/vae
   max_epoch: 3000
-  test_every_epoch: 20
+  test_every_epoch: 1
   log_per_iter: 50
   ckpt_num: 5
   port: 10001
@@ -12,7 +12,7 @@ SOLVER:
   # optimizer
   type: adamw
   weight_decay: 0.01  # default value of adamw
-  lr: 0.001           # default value of adamw
+  lr: 0.0002           # default value of adamw
 
   # learning rate
   lr_type: constant
@@ -78,7 +78,8 @@ MODEL:
   full_depth: *full_depth
   depth_stop: 6
   vqvae_ckpt: saved_ckpt/vqvae_model.pth
-
+  enable_vqvae: False
+  find_unused_parameters: True
   VQVAE:
     name: vae
 
