@@ -103,22 +103,21 @@ class OctarSolver(Solver):
 
     def generate_iter(self, iter):
         # forward the model
-        # octree_out = ocnn.octree.init_octree(
-        #     self.depth_stop, self.full_depth, 1, self.device)
-        # octree_out, vq_indices = self.model_module.generate(
-        #     octree_out, depth_low=self.full_depth, depth_high=self.depth_stop,
-        #     vqvae=self.vqvae_module if self.enable_vqvae else None)
+        octree_out = ocnn.octree.init_octree(
+            self.depth, self.full_depth, 1, self.device)
+        octree_out, vq_indices = self.model_module.generate(
+            octree_out, depth_low=self.full_depth, depth_high=self.depth_stop,
+            vqvae=self.vqvae_module if self.enable_vqvae else None)
 
-        octree_out, vq_indices = torch.load("mytools/1.pth")
         for d in range(self.full_depth + 1, self.depth_stop + 1):
             utils.export_octree(octree_out, d, os.path.join(
                 self.logdir, f'results/octree_depth{d}'))
-
+        
         # decode the octree
         if self.enable_vqvae:
             for d in range(self.depth_stop+1, self.depth):
                 split_zero_d = torch.zeros(
-                    octree_out.nnum[d], device=self.device).long()
+                    octree_out.nnum[d], device=octree_out.device).long()
                 octree_out.octree_split(split_zero_d, d)
                 octree_out.octree_grow(d + 1)
             doctree_out = OctreeD(octree_out)
