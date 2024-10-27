@@ -64,7 +64,6 @@ class OctarSolver(Solver):
                 batch[key] = batch[key].cuda()
 
     def model_forward(self, batch):
-        self.model.train()
         self.batch_to_cuda(batch)
         octree_in = batch['octree']
         
@@ -87,10 +86,10 @@ class OctarSolver(Solver):
         output = {'train/' + key: val for key, val in output.items()}
         return output
 
-    def test_step(self, batch):
+    # rewrite the test_epoch function as generate
+    def test_epoch(self, epoch):
+        self.model.eval()
         self.generate_iter(0)
-        output = {'loss': torch.tensor(0.0).to(self.device)}
-        return output
     
     def generate(self):
         self.manual_seed()
