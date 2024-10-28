@@ -10,7 +10,7 @@ from models.vqvae import VQVAE
 from models.gpt import GPT
 from datasets import get_shapenet_vae_dataset
 from tqdm import tqdm
-
+os.environ['TORCH_NCCL_BLOCKING_WAIT '] = '1'
 
 class OctarSolver(Solver):
 
@@ -21,18 +21,27 @@ class OctarSolver(Solver):
         self.full_depth = FLAGS.MODEL.full_depth
         self.enable_vqvae = FLAGS.MODEL.enable_vqvae
 
-    def config_model(self):
+    def get_model(self):
         flags = self.FLAGS.MODEL
         model = GPT(**flags.GPT)
         vqvae = VQVAE(**flags.VQVAE)
+        model.cuda(device=self.device)
+        vqvae.cuda(device=self.device)
+
+        utils.set_requires_grad(model, True)
+        utils.set_requires_grad(vqvae, False)
 
         # load the pretrained vqvae
         checkpoint = torch.load(flags.vqvae_ckpt)
         vqvae.load_state_dict(checkpoint)
         print("Load VQVAE from", flags.vqvae_ckpt)
-
-        model.cuda(device=self.device)
-        vqvae.cuda(device=self.device)
+        self.vqvae_module = vqvae
+        return model
+    
+    def config_model(self):
+        flags = self.FLAGS.MODEL
+        model = self.get_model()
+        
         if self.world_size > 1:
             if flags.sync_bn:
                 model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -41,15 +50,13 @@ class OctarSolver(Solver):
                 module=model, device_ids=[self.device],
                 output_device=self.device, broadcast_buffers=False,
                 find_unused_parameters=flags.find_unused_parameters)
-            vqvae = torch.nn.parallel.DistributedDataParallel(
-                module=vqvae, device_ids=[self.device],
-                output_device=self.device, broadcast_buffers=False,
-                find_unused_parameters=flags.find_unused_parameters)
+            # vqvae = torch.nn.parallel.DistributedDataParallel(
+            #     module=vqvae, device_ids=[self.device],
+            #     output_device=self.device, broadcast_buffers=False,
+            #     find_unused_parameters=flags.find_unused_parameters)
             self.model_module = model.module
-            self.vqvae_module = vqvae.module
         else:
             self.model_module = model
-            self.vqvae_module = vqvae
         self.model = model
         # if self.is_master:
         #     print(model)
@@ -101,6 +108,7 @@ class OctarSolver(Solver):
         for iter in tqdm(range(10000), ncols=80):
             self.generate_iter(iter)
 
+    @torch.no_grad()
     def generate_iter(self, iter):
         # forward the model
         octree_out = ocnn.octree.init_octree(
@@ -121,9 +129,10 @@ class OctarSolver(Solver):
                 octree_out.octree_split(split_zero_d, d)
                 octree_out.octree_grow(d + 1)
             doctree_out = OctreeD(octree_out)
-            zq = self.vqvae_module.quantizer.embedding(vq_indices)
-            output = self.vqvae_module.decode_code(
-                zq, self.depth_stop, doctree_out, update_octree=True)
+            with torch.no_grad():
+                zq = self.vqvae_module.quantizer.embedding(vq_indices)
+                output = self.vqvae_module.decode_code(
+                    zq, self.depth_stop, doctree_out, update_octree=True)
 
             # extract the mesh
             utils.create_mesh(

@@ -169,7 +169,8 @@ class GPT(nn.Module):
                     vq_logits = self.vq_head(x[-1:, :])
                     ix = sample(vq_logits)
                     vq_indices = torch.cat([vq_indices, ix], dim=0)
-                    token_embeddings = torch.cat([token_embeddings, vqvae.quantizer.embedding(ix)], dim=0)
+                    with torch.no_grad():
+                        token_embeddings = torch.cat([token_embeddings, vqvae.quantizer.embedding(ix)], dim=0)
             if d < depth_high:
                 octree = seq2octree(octree, split[-nnum_d:], d, d + 1)
 
