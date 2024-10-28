@@ -4,7 +4,7 @@ SOLVER:
 
   logdir: logs/shapenet_vae/vae
   max_epoch: 3000
-  test_every_epoch: 1
+  test_every_epoch: 10
   log_per_iter: 50
   ckpt_num: 5
   port: 10001
@@ -80,6 +80,7 @@ MODEL:
   vqvae_ckpt: saved_ckpt/vqvae_model.pth
   enable_vqvae: True
   find_unused_parameters: True
+
   VQVAE:
     name: vae
 
@@ -88,6 +89,15 @@ MODEL:
     embedding_sizes: 128
     embedding_channels: 256
     feature: ND
+  
+  GPT:
+    n_embed: 256
+    n_head: 8
+    n_layer: 16
+    num_classes: 1
+    split_size: 2
+    vq_size: 128
+    embed_drop: 0.1
     
   
 

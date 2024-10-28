@@ -48,7 +48,6 @@ class GPT(nn.Module):
                  n_head=8,
                  n_layer=8,
                  num_classes=1,
-                 num_depth=4,
                  split_size=2,
                  vq_size=128,
                  embed_drop=0.1,

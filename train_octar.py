@@ -23,7 +23,7 @@ class OctarSolver(Solver):
 
     def config_model(self):
         flags = self.FLAGS.MODEL
-        model = GPT()
+        model = GPT(**flags.GPT)
         vqvae = VQVAE(**flags.VQVAE)
 
         # load the pretrained vqvae
