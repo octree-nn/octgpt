@@ -7,7 +7,7 @@ SOLVER:
   test_every_epoch: 10
   log_per_iter: 50
   ckpt_num: 5
-  port: 10001
+  port: 20001
 
   # optimizer
   type: adamw
@@ -78,7 +78,7 @@ MODEL:
   full_depth: *full_depth
   depth_stop: 6
   vqvae_ckpt: saved_ckpt/vqvae_model.pth
-  enable_vqvae: True
+  enable_vqvae: False
   find_unused_parameters: True
 
   VQVAE:
@@ -93,7 +93,7 @@ MODEL:
   GPT:
     n_embed: 256
     n_head: 8
-    n_layer: 16
+    n_layer: 8
     num_classes: 1
     split_size: 2
     vq_size: 128

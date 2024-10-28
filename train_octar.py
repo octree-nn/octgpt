@@ -1,11 +1,13 @@
 import os
 import torch
+from torch import distributed as dist
 import ocnn
 import ognn
 from thsolver import Solver
 from ognn.octreed import OctreeD
 
-import utils
+from utils import utils
+from utils.distributed import get_rank
 from models.vqvae import VQVAE
 from models.gpt import GPT
 from datasets import get_shapenet_vae_dataset
@@ -109,8 +111,9 @@ class OctarSolver(Solver):
             self.generate_iter(iter)
 
     @torch.no_grad()
-    def generate_iter(self, iter):
+    def generate_iter(self, index):
         # forward the model
+        index = self.world_size * index + get_rank()
         octree_out = ocnn.octree.init_octree(
             self.depth, self.full_depth, 1, self.device)
         octree_out, vq_indices = self.model_module.generate(
@@ -119,7 +122,7 @@ class OctarSolver(Solver):
 
         for d in range(self.full_depth + 1, self.depth_stop + 1):
             utils.export_octree(octree_out, d, os.path.join(
-                self.logdir, f'results/octree_depth{d}'), index=iter)
+                self.logdir, f'results/octree_depth{d}'), index=index)
 
         # decode the octree
         if self.enable_vqvae:
@@ -136,7 +139,7 @@ class OctarSolver(Solver):
 
             # extract the mesh
             utils.create_mesh(
-                output['neural_mpu'], os.path.join(self.logdir, f"results/{iter}.obj"), size=self.FLAGS.SOLVER.resolution,
+                output['neural_mpu'], os.path.join(self.logdir, f"results/{index}.obj"), size=self.FLAGS.SOLVER.resolution,
                 bbmin=-self.FLAGS.SOLVER.sdf_scale, bbmax=self.FLAGS.SOLVER.sdf_scale, mesh_scale=self.FLAGS.DATA.test.point_scale,
                 save_sdf=self.FLAGS.SOLVER.save_sdf)
 

@@ -9,7 +9,7 @@ import ocnn
 import copy
 # from transformers import top_k_top_p_filtering
 from tqdm import tqdm
-from utils import seq2octree
+from utils.utils import seq2octree
 from models.octformer import OctFormer, SinPosEmb
 
 logger = logging.getLogger(__name__)
