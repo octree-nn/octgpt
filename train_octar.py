@@ -111,11 +111,11 @@ class OctarSolver(Solver):
 
         for d in range(self.full_depth + 1, self.depth_stop + 1):
             utils.export_octree(octree_out, d, os.path.join(
-                self.logdir, f'results/octree_depth{d}'))
-        
+                self.logdir, f'results/octree_depth{d}'), index=iter)
+
         # decode the octree
         if self.enable_vqvae:
-            for d in range(self.depth_stop+1, self.depth):
+            for d in range(self.depth_stop, self.depth):
                 split_zero_d = torch.zeros(
                     octree_out.nnum[d], device=octree_out.device).long()
                 octree_out.octree_split(split_zero_d, d)
