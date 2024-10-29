@@ -1,6 +1,5 @@
 import os
 import torch
-from torch import distributed as dist
 import ocnn
 import ognn
 from thsolver import Solver
@@ -12,7 +11,7 @@ from models.vqvae import VQVAE
 from models.gpt import GPT
 from datasets import get_shapenet_vae_dataset
 from tqdm import tqdm
-os.environ['TORCH_NCCL_BLOCKING_WAIT '] = '1'
+os.environ['TORCH_NCCL_BLOCKING_WAIT'] = '1'
 
 class OctarSolver(Solver):
 
@@ -99,6 +98,10 @@ class OctarSolver(Solver):
 
     # rewrite the test_epoch function as generate
     def test_epoch(self, epoch):
+        # TODO: generate_iter has some bugs
+        # skip the test_epoch and just save the checkpoint
+        if epoch % self.FLAGS.SOLVER.generate_every_epoch != 0:
+            return
         self.model.eval()
         self.generate_iter(epoch)
 
@@ -120,6 +123,7 @@ class OctarSolver(Solver):
             octree_out, depth_low=self.full_depth, depth_high=self.depth_stop,
             vqvae=self.vqvae_module if self.enable_vqvae else None)
 
+        # export the octree
         for d in range(self.full_depth + 1, self.depth_stop + 1):
             utils.export_octree(octree_out, d, os.path.join(
                 self.logdir, f'results/octree_depth{d}'), index=index)

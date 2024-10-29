@@ -200,6 +200,9 @@ class OctreeAttention(torch.nn.Module):
         self.scale = qk_scale or (dim // num_heads) ** -0.5
 
         self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
+        # self.query = torch.nn.Linear(dim, dim, bias=qkv_bias)
+        # self.key = torch.nn.Linear(dim, dim, bias=qkv_bias)
+        # self.value = torch.nn.Linear(dim, dim, bias=qkv_bias)
         self.attn_drop = torch.nn.Dropout(attn_drop)
         self.proj = torch.nn.Linear(dim, dim)
         self.proj_drop = torch.nn.Dropout(proj_drop)
@@ -237,6 +240,9 @@ class OctreeAttention(torch.nn.Module):
         # qkv
         qkv = self.qkv(data).reshape(-1, K, 3, H, C // H).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]            # (N, H, K, C')
+        # q = self.query(data).reshape(-1, K, H, C // H).transpose(1, 2)
+        # k = self.key(data).reshape(-1, K, H, C // H).transpose(1, 2)
+        # v = self.value(data).reshape(-1, K, H, C // H).transpose(1, 2)
         q = q * self.scale
 
         # attn
