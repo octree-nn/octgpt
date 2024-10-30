@@ -208,9 +208,6 @@ class OctreeAttention(torch.nn.Module):
         self.scale = qk_scale or (dim // num_heads) ** -0.5
 
         self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
-        # self.query = torch.nn.Linear(dim, dim, bias=qkv_bias)
-        # self.key = torch.nn.Linear(dim, dim, bias=qkv_bias)
-        # self.value = torch.nn.Linear(dim, dim, bias=qkv_bias)
         self.attn_drop = torch.nn.Dropout(attn_drop)
         self.proj = torch.nn.Linear(dim, dim)
         self.proj_drop = torch.nn.Dropout(proj_drop)
@@ -247,12 +244,12 @@ class OctreeAttention(torch.nn.Module):
                 qkv = qkv.view(-1, K, D, C * 3).transpose(1, 2).reshape(-1, C * 3)
             qkv = qkv.view(-1, K, C * 3)
             qkv = qkv.reshape(-1, K, 3, H, C // H).permute(2, 0, 3, 1, 4)
-            q, k, v = qkv[0], qkv[1], qkv[2] 
+            q, k, v = qkv[0], qkv[1], qkv[2]
             return q, k, v
-        
+
         # qkv
         qkv = self.qkv(data)
-        
+
         if layer_past is not None:
             Q = qkv.shape[0]   # num of queries
             present = torch.cat([layer_past, qkv], dim=0)
@@ -272,9 +269,6 @@ class OctreeAttention(torch.nn.Module):
             Q = K
             q, k, v = patchify_qkv(qkv)
             present = None
-        # q = (q).reshape(-1, Q, H, C // H).transpose(1, 2)
-        # k = self.key(data).reshape(-1, K, H, C // H).transpose(1, 2)
-        # v = self.value(data).reshape(-1, K, H, C // H).transpose(1, 2)
         q = q * self.scale
 
         # attn
@@ -291,7 +285,8 @@ class OctreeAttention(torch.nn.Module):
 
         if layer_past is not None:
             if D > 1:
-                data = data[past_length % dilation:(past_length % dilation) + Q]
+                data = data[past_length %
+                            dilation:(past_length % dilation) + Q]
             else:
                 data = data[:Q]
         else:
