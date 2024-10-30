@@ -289,7 +289,10 @@ class OctreeAttention(torch.nn.Module):
             data = data.view(-1, D, Q, C).transpose(1, 2).reshape(-1, C)
 
         if layer_past is not None:
-            data = data[past_length:past_length + Q]
+            if D > 1:
+                data = data[past_length % dilation:(past_length % dilation) + Q]
+            else:
+                data = data[:Q]
         else:
             data = octree.patch_reverse(data)
 

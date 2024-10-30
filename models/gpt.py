@@ -158,12 +158,11 @@ class GPT(nn.Module):
                 embeddings = token_embeddings + \
                     position_embeddings[:token_embeddings.shape[0], :]  # S x C
 
-                y = self.drop(embeddings)
-                y, _ = self.blocks(y, octree, depth_low, d)  # B x S x C
+                # y = self.drop(embeddings)
+                # y, _ = self.blocks(y, octree, depth_low, d)  # B x S x C
                 x = self.drop(embeddings[-1:])
                 x, presents = self.blocks(x, octree, depth_low, d, past)  # B x S x C
-                presents = torch.stack(presents, dim=0)
-                past = torch.cat([past, presents], dim=1)
+                past = torch.stack(presents, dim=0)
                 x = self.ln_x(x)
                 
                 if d < depth_high:
