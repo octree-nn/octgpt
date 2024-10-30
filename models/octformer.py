@@ -207,10 +207,10 @@ class OctreeAttention(torch.nn.Module):
         self.use_rpe = use_rpe
         self.scale = qk_scale or (dim // num_heads) ** -0.5
 
-        # self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.query = torch.nn.Linear(dim, dim, bias=qkv_bias)
-        self.key = torch.nn.Linear(dim, dim, bias=qkv_bias)
-        self.value = torch.nn.Linear(dim, dim, bias=qkv_bias)
+        self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
+        # self.query = torch.nn.Linear(dim, dim, bias=qkv_bias)
+        # self.key = torch.nn.Linear(dim, dim, bias=qkv_bias)
+        # self.value = torch.nn.Linear(dim, dim, bias=qkv_bias)
         self.attn_drop = torch.nn.Dropout(attn_drop)
         self.proj = torch.nn.Linear(dim, dim)
         self.proj_drop = torch.nn.Dropout(proj_drop)
@@ -240,19 +240,24 @@ class OctreeAttention(torch.nn.Module):
             torch.ones(K, K, device=data.device)).unsqueeze(0)
         mask = mask.masked_fill(teacher_forcing_mask == 0, -1e3)
 
-        def patch_reshape(x: torch.Tensor):
+        def patchify_qkv(qkv: torch.Tensor):
             # patch partition
-            x = octree.patch_partition(x)
+            qkv = octree.patch_partition(qkv)
             if D > 1:    # dilation
-                x = x.view(-1, K, D, C).transpose(1, 2).reshape(-1, C)
-            x = x.view(-1, K, C)
-            return x
-
+                qkv = qkv.view(-1, K, D, C * 3).transpose(1, 2).reshape(-1, C * 3)
+            qkv = qkv.view(-1, K, C * 3)
+            qkv = qkv.reshape(-1, K, 3, H, C // H).permute(2, 0, 3, 1, 4)
+            q, k, v = qkv[0], qkv[1], qkv[2] 
+            return q, k, v
+        
+        # qkv
+        qkv = self.qkv(data)
+        
         if layer_past is not None:
-            Q = data.shape[0]   # num of queries
-            present = torch.cat([layer_past, data], dim=0)
+            Q = qkv.shape[0]   # num of queries
+            present = torch.cat([layer_past, qkv], dim=0)
             past_length = layer_past.shape[0]
-            data = patch_reshape(present)
+            q, k, v = patchify_qkv(present)
             dilation = octree.dilation
             # assure that Q is in one patch
             if D > 1:
@@ -261,19 +266,15 @@ class OctreeAttention(torch.nn.Module):
             else:
                 q_start = past_length
                 q_end = past_length + Q
-            q = data[:, q_start:q_end, :]
+            q = q[:, :, q_start:q_end, :]
             mask = mask[:, q_start:q_end, :]
         else:
             Q = K
-            data = patch_reshape(data)
-            q = data
+            q, k, v = patchify_qkv(qkv)
             present = None
-        q = self.query(q).reshape(-1, Q, H, C // H).transpose(1, 2)
-        k = self.key(data).reshape(-1, K, H, C // H).transpose(1, 2)
-        v = self.value(data).reshape(-1, K, H, C // H).transpose(1, 2)
-        # qkv
-        # qkv = self.qkv(data).reshape(-1, K, 3, H, C // H).permute(2, 0, 3, 1, 4)
-        # q, k, v = qkv[0], qkv[1], qkv[2]            # (N, H, K, C')
+        # q = (q).reshape(-1, Q, H, C // H).transpose(1, 2)
+        # k = self.key(data).reshape(-1, K, H, C // H).transpose(1, 2)
+        # v = self.value(data).reshape(-1, K, H, C // H).transpose(1, 2)
         q = q * self.scale
 
         # attn

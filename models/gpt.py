@@ -144,7 +144,7 @@ class GPT(nn.Module):
         split = torch.tensor([], device=octree.device).long()
         vq_indices = torch.tensor([], device=octree.device).long()
 
-        past = torch.empty((self.n_layer, 0, self.n_embed), device=octree.device)
+        past = torch.empty((self.n_layer, 0, self.n_embed * 3), device=octree.device)
         for d in range(depth_low, depth_high + 1):
             # if not need to generate vq code
             if d == depth_high and vqvae == None:
