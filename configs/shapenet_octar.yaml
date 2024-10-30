@@ -94,7 +94,7 @@ MODEL:
   GPT:
     n_embed: 256
     n_head: 8
-    n_layer: 8
+    n_layer: 2
     num_classes: 1
     split_size: 2
     vq_size: 128

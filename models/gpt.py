@@ -54,6 +54,7 @@ class GPT(nn.Module):
                   **kwargs):
         super(GPT, self).__init__()
         self.n_embed = n_embed
+        self.n_layer = n_layer
 
         self.pos_emb = SinPosEmb(n_embed)
 
@@ -111,7 +112,7 @@ class GPT(nn.Module):
         # embeddings = embeddings.unsqueeze(0)
         x = self.drop(embeddings)
 
-        x = self.blocks(x, octree_in, depth_low, depth_high)
+        x, presents = self.blocks(x, octree_in, depth_low, depth_high)
         x = self.ln_x(x)
 
         output = {}
@@ -142,7 +143,8 @@ class GPT(nn.Module):
         token_embeddings = cond  # 1 x C
         split = torch.tensor([], device=octree.device).long()
         vq_indices = torch.tensor([], device=octree.device).long()
-        
+
+        past = torch.empty((self.n_layer, 0, self.n_embed), device=octree.device)
         for d in range(depth_low, depth_high + 1):
             # if not need to generate vq code
             if d == depth_high and vqvae == None:
@@ -156,8 +158,12 @@ class GPT(nn.Module):
                 embeddings = token_embeddings + \
                     position_embeddings[:token_embeddings.shape[0], :]  # S x C
 
-                x = self.drop(embeddings)
-                x = self.blocks(x, octree, depth_low, d)  # B x S x C
+                y = self.drop(embeddings)
+                y, _ = self.blocks(y, octree, depth_low, d)  # B x S x C
+                x = self.drop(embeddings[-1:])
+                x, presents = self.blocks(x, octree, depth_low, d, past)  # B x S x C
+                presents = torch.stack(presents, dim=0)
+                past = torch.cat([past, presents], dim=1)
                 x = self.ln_x(x)
                 
                 if d < depth_high:

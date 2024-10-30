@@ -15,11 +15,12 @@ from typing import Optional, List
 from torch.utils.checkpoint import checkpoint
 from positional_encodings.torch_encodings import PositionalEncoding3D
 
+
 class OctreeT(Octree):
 
     def __init__(self, octree: Octree, data_length: int, patch_size: int = 24, dilation: int = 4,
-                nempty: bool = True, max_depth: Optional[int] = None,
-                start_depth: Optional[int] = None, **kwargs):
+                 nempty: bool = True, max_depth: Optional[int] = None,
+                 start_depth: Optional[int] = None, **kwargs):
         super().__init__(octree.depth, octree.full_depth)
         self.__dict__.update(octree.__dict__)
 
@@ -34,7 +35,8 @@ class OctreeT(Octree):
         self.block_num = patch_size * dilation
 
         self.nnum_t = data_length
-        self.nnum_a = int(np.ceil(self.nnum_t / self.block_num) * self.block_num)
+        self.nnum_a = int(
+            np.ceil(self.nnum_t / self.block_num) * self.block_num)
         self.batch_idx = None
         self.patch_mask = None
         self.dilate_mask = None
@@ -52,7 +54,8 @@ class OctreeT(Octree):
         for d in range(self.start_depth, self.max_depth + 1):
             batch.append(self.batch_id(d, self.nempty))
         self.batch_idx = torch.cat(batch, dim=0)
-        self.batch_idx = self.patch_partition(self.batch_idx[:self.nnum_t], self.batch_size)
+        self.batch_idx = self.patch_partition(
+            self.batch_idx[:self.nnum_t], self.batch_size)
 
     def build_attn_mask(self):
         batch = self.batch_idx
@@ -65,7 +68,8 @@ class OctreeT(Octree):
 
     def _calc_attn_mask(self, mask: torch.Tensor):
         attn_mask = mask.unsqueeze(2) - mask.unsqueeze(1)
-        attn_mask = attn_mask.masked_fill(attn_mask != 0, self.invalid_mask_value)
+        attn_mask = attn_mask.masked_fill(
+            attn_mask != 0, self.invalid_mask_value)
         return attn_mask
 
     def build_rel_pos(self):
@@ -97,8 +101,8 @@ class OctreeT(Octree):
 class MLP(torch.nn.Module):
 
     def __init__(self, in_features: int, hidden_features: Optional[int] = None,
-                out_features: Optional[int] = None, activation=torch.nn.GELU,
-                drop: float = 0.0, **kwargs):
+                 out_features: Optional[int] = None, activation=torch.nn.GELU,
+                 drop: float = 0.0, **kwargs):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features or in_features
@@ -121,10 +125,10 @@ class MLP(torch.nn.Module):
 class OctreeDWConvBn(torch.nn.Module):
 
     def __init__(self, in_channels: int, kernel_size: List[int] = [3],
-                stride: int = 1, nempty: bool = False):
+                 stride: int = 1, nempty: bool = False):
         super().__init__()
         self.conv = dwconv.OctreeDWConv(
-                in_channels, kernel_size, nempty, use_bias=False)
+            in_channels, kernel_size, nempty, use_bias=False)
         self.bn = torch.nn.BatchNorm1d(in_channels)
 
     def forward(self, data: torch.Tensor, octree: Octree, depth: int):
@@ -142,7 +146,8 @@ class RPE(torch.nn.Module):
         self.dilation = dilation
         self.pos_bnd = self.get_pos_bnd(patch_size)
         self.rpe_num = 2 * self.pos_bnd + 1
-        self.rpe_table = torch.nn.Parameter(torch.zeros(3*self.rpe_num, num_heads))
+        self.rpe_table = torch.nn.Parameter(
+            torch.zeros(3*self.rpe_num, num_heads))
         torch.nn.init.trunc_normal_(self.rpe_table, std=0.02)
 
     def get_pos_bnd(self, patch_size: int):
@@ -165,21 +170,24 @@ class RPE(torch.nn.Module):
         return 'num_heads={}, pos_bnd={}, dilation={}'.format(
             self.num_heads, self.pos_bnd, self.dilation)    # noqa
 
+
 class SinPosEmb(torch.nn.Module):
     def __init__(self, n_embed, num_depth=4):
         super().__init__()
         self.n_embed = n_embed
         self.pos_emb = PositionalEncoding3D(n_embed)
         self.depth_emb = torch.nn.Embedding(num_depth, n_embed)
-    
+
     def forward(self, octree, depth_low, depth_high):
         position_embeddings = []
         for d in range(depth_low, depth_high + 1):
             scale = 2 ** d
             x, y, z, b = octree.xyzb(d)
-            pos_emb_d = self.pos_emb(torch.zeros((1, scale, scale, scale, self.n_embed), device=octree.device))
+            pos_emb_d = self.pos_emb(torch.zeros(
+                (1, scale, scale, scale, self.n_embed), device=octree.device))
             pos_emb_d = pos_emb_d[0, x, y, z, :]
-            depth_emb_d = self.depth_emb(torch.tensor([d - depth_low], device=octree.device))
+            depth_emb_d = self.depth_emb(torch.tensor(
+                [d - depth_low], device=octree.device))
             position_embeddings.append(pos_emb_d + depth_emb_d)
         position_embeddings = torch.cat(position_embeddings, dim=0)
         return position_embeddings
@@ -188,9 +196,9 @@ class SinPosEmb(torch.nn.Module):
 class OctreeAttention(torch.nn.Module):
 
     def __init__(self, dim: int, patch_size: int, num_heads: int,
-            qkv_bias: bool = True, qk_scale: Optional[float] = None,
-            attn_drop: float = 0.0, proj_drop: float = 0.0,
-            dilation: int = 1, use_rpe: bool = False):
+                 qkv_bias: bool = True, qk_scale: Optional[float] = None,
+                 attn_drop: float = 0.0, proj_drop: float = 0.0,
+                 dilation: int = 1, use_rpe: bool = False):
         super().__init__()
         self.dim = dim
         self.patch_size = patch_size
@@ -199,10 +207,10 @@ class OctreeAttention(torch.nn.Module):
         self.use_rpe = use_rpe
         self.scale = qk_scale or (dim // num_heads) ** -0.5
 
-        self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
-        # self.query = torch.nn.Linear(dim, dim, bias=qkv_bias)
-        # self.key = torch.nn.Linear(dim, dim, bias=qkv_bias)
-        # self.value = torch.nn.Linear(dim, dim, bias=qkv_bias)
+        # self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.query = torch.nn.Linear(dim, dim, bias=qkv_bias)
+        self.key = torch.nn.Linear(dim, dim, bias=qkv_bias)
+        self.value = torch.nn.Linear(dim, dim, bias=qkv_bias)
         self.attn_drop = torch.nn.Dropout(attn_drop)
         self.proj = torch.nn.Linear(dim, dim)
         self.proj_drop = torch.nn.Dropout(proj_drop)
@@ -215,39 +223,62 @@ class OctreeAttention(torch.nn.Module):
         # it is not indispensible, and can be removed by setting `use_rpe` as False.
         self.rpe = RPE(patch_size, num_heads, dilation) if use_rpe else None
 
-    def forward(self, data: torch.Tensor, octree: OctreeT, depth: int):
+    def forward(self, data: torch.Tensor, octree: OctreeT, layer_past=None):
         H = self.num_heads
         K = self.patch_size
         C = self.dim
         D = self.dilation
 
-        # patch partition
-        data = octree.patch_partition(data)
-        if D > 1:    # dilation
+        if D > 1:
             rel_pos = octree.dilate_pos
             mask = octree.dilate_mask
-            data = data.view(-1, K, D, C).transpose(1, 2).reshape(-1, C)
         else:
             rel_pos = octree.rel_pos
             mask = octree.patch_mask
-        
         # teacher forcing mask
-        teacher_forcing_mask = torch.tril(torch.ones(K, K, device=data.device)).unsqueeze(0)
+        teacher_forcing_mask = torch.tril(
+            torch.ones(K, K, device=data.device)).unsqueeze(0)
         mask = mask.masked_fill(teacher_forcing_mask == 0, -1e3)
 
-        data = data.view(-1, K, C)
+        def patch_reshape(x: torch.Tensor):
+            # patch partition
+            x = octree.patch_partition(x)
+            if D > 1:    # dilation
+                x = x.view(-1, K, D, C).transpose(1, 2).reshape(-1, C)
+            x = x.view(-1, K, C)
+            return x
 
+        if layer_past is not None:
+            Q = data.shape[0]   # num of queries
+            present = torch.cat([layer_past, data], dim=0)
+            past_length = layer_past.shape[0]
+            data = patch_reshape(present)
+            dilation = octree.dilation
+            # assure that Q is in one patch
+            if D > 1:
+                q_start = int(np.floor(past_length / dilation))
+                q_end = int(np.ceil((past_length + Q) / dilation))
+            else:
+                q_start = past_length
+                q_end = past_length + Q
+            q = data[:, q_start:q_end, :]
+            mask = mask[:, q_start:q_end, :]
+        else:
+            Q = K
+            data = patch_reshape(data)
+            q = data
+            present = None
+        q = self.query(q).reshape(-1, Q, H, C // H).transpose(1, 2)
+        k = self.key(data).reshape(-1, K, H, C // H).transpose(1, 2)
+        v = self.value(data).reshape(-1, K, H, C // H).transpose(1, 2)
         # qkv
-        qkv = self.qkv(data).reshape(-1, K, 3, H, C // H).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]            # (N, H, K, C')
-        # q = self.query(data).reshape(-1, K, H, C // H).transpose(1, 2)
-        # k = self.key(data).reshape(-1, K, H, C // H).transpose(1, 2)
-        # v = self.value(data).reshape(-1, K, H, C // H).transpose(1, 2)
+        # qkv = self.qkv(data).reshape(-1, K, 3, H, C // H).permute(2, 0, 3, 1, 4)
+        # q, k, v = qkv[0], qkv[1], qkv[2]            # (N, H, K, C')
         q = q * self.scale
 
         # attn
         attn = q @ k.transpose(-2, -1)                # (N, H, K, K)
-        attn = self.apply_rpe(attn, rel_pos)    # (N, H, K, K)
+        # attn = self.apply_rpe(attn, rel_pos)    # (N, H, K, K)
         attn = attn + mask.unsqueeze(1)
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
@@ -255,13 +286,17 @@ class OctreeAttention(torch.nn.Module):
 
         # patch reverse
         if D > 1:    # dilation
-            data = data.view(-1, D, K, C).transpose(1, 2).reshape(-1, C)
-        data = octree.patch_reverse(data)
+            data = data.view(-1, D, Q, C).transpose(1, 2).reshape(-1, C)
+
+        if layer_past is not None:
+            data = data[past_length:past_length + Q]
+        else:
+            data = octree.patch_reverse(data)
 
         # ffn
         data = self.proj(data)
         data = self.proj_drop(data)
-        return data
+        return data, present
 
     def apply_rpe(self, attn, rel_pos):
         if self.use_rpe:
@@ -276,14 +311,14 @@ class OctreeAttention(torch.nn.Module):
 class OctFormerBlock(torch.nn.Module):
 
     def __init__(self, dim: int, num_heads: int, patch_size: int = 32,
-            dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
-            qk_scale: Optional[float] = None, attn_drop: float = 0.0,
-            proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
-            activation: torch.nn.Module = torch.nn.GELU, **kwargs):
+                 dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
+                 qk_scale: Optional[float] = None, attn_drop: float = 0.0,
+                 proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
+                 activation: torch.nn.Module = torch.nn.GELU, **kwargs):
         super().__init__()
         self.norm1 = torch.nn.LayerNorm(dim)
         self.attention = OctreeAttention(dim, patch_size, num_heads, qkv_bias,
-            qk_scale, attn_drop, proj_drop, dilation)
+                                         qk_scale, attn_drop, proj_drop, dilation)
         self.norm2 = torch.nn.LayerNorm(dim)
         self.mlp = MLP(dim, int(dim * mlp_ratio), dim, activation, proj_drop)
         # self.drop_path = ocnn.nn.OctreeDropPath(drop_path, nempty)
@@ -291,26 +326,30 @@ class OctFormerBlock(torch.nn.Module):
         # self.cpe = OctreeDWConvBn(dim, nempty=nempty)
         self.pe = SinPosEmb(dim)
 
-    def forward(self, data: torch.Tensor, octree: OctreeT, depth_low: int, depth_high: int):
-        data = self.pe(octree, depth_low, depth_high)[:octree.nnum_t] + data
-        attn = self.attention(self.norm1(data), octree, depth_low)
-        # data = data + self.drop_path(attn, octree, depth_low)
+    def forward(self, data: torch.Tensor, octree: OctreeT, depth_low: int, depth_high: int, layer_past=None):
+        if layer_past is not None:
+            pe = self.pe(octree, depth_low, depth_high)[
+                layer_past.shape[0]:octree.nnum_t]
+        else:
+            pe = self.pe(octree, depth_low, depth_high)[:octree.nnum_t]
+        data = pe + data
+        attn, layer_present = self.attention(
+            self.norm1(data), octree, layer_past)
         data = data + self.dropout(attn)
         ffn = self.mlp(self.norm2(data))
-        # data = data + self.drop_path(ffn, octree, depth_low)
         data = data + self.dropout(ffn)
-        return data
+        return data, layer_present
 
 
 class OctFormerStage(torch.nn.Module):
 
     def __init__(self, dim: int, num_heads: int, patch_size: int = 32,
-            dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
-            qk_scale: Optional[float] = None, attn_drop: float = 0.0,
-            proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
-            activation: torch.nn.Module = torch.nn.GELU, interval: int = 6,
-            use_checkpoint: bool = True, num_blocks: int = 2,
-            octformer_block=OctFormerBlock, **kwargs):
+                 dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
+                 qk_scale: Optional[float] = None, attn_drop: float = 0.0,
+                 proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
+                 activation: torch.nn.Module = torch.nn.GELU, interval: int = 6,
+                 use_checkpoint: bool = True, num_blocks: int = 2,
+                 octformer_block=OctFormerBlock, **kwargs):
         super().__init__()
         self.num_blocks = num_blocks
         self.use_checkpoint = use_checkpoint
@@ -322,26 +361,32 @@ class OctFormerStage(torch.nn.Module):
             dilation=1 if (i % 2 == 0) else dilation,
             mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
             attn_drop=attn_drop, proj_drop=proj_drop,
-            drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+            drop_path=drop_path[i] if isinstance(
+                drop_path, list) else drop_path,
             nempty=nempty, activation=activation) for i in range(num_blocks)])
         # self.norms = torch.nn.ModuleList([
         #         torch.nn.BatchNorm1d(dim) for _ in range(self.num_norms)])
 
-    def forward(self, data: torch.Tensor, octree: OctreeT, depth_low: int, depth_high: int):
+    def forward(self, data: torch.Tensor, octree: OctreeT, depth_low: int, depth_high: int, past=None):
+        presents = []
         for i in range(self.num_blocks):
+            layer_past = past[i] if past is not None else None
             if self.use_checkpoint and self.training:
-                data = checkpoint(self.blocks[i], data, octree, depth_low, depth_high, use_reentrant=False)
+                data, layer_present = checkpoint(
+                    self.blocks[i], data, octree, depth_low, depth_high, layer_past, use_reentrant=False)
             else:
-                data = self.blocks[i](data, octree, depth_low, depth_high)
+                data, layer_present = self.blocks[i](
+                    data, octree, depth_low, depth_high, layer_past)
+            presents.append(layer_present)
             # if i % self.interval == 0 and i != 0:
             #     data = self.norms[(i - 1) // self.interval](data)
-        return data
+        return data, presents
 
 
 class PatchEmbed(torch.nn.Module):
 
     def __init__(self, in_channels: int = 3, dim: int = 96, num_down: int = 2,
-            nempty: bool = True, **kwargs):
+                 nempty: bool = True, **kwargs):
         super().__init__()
         self.num_stages = num_down
         self.delta_depth = -num_down
@@ -368,11 +413,11 @@ class PatchEmbed(torch.nn.Module):
 class Downsample(torch.nn.Module):
 
     def __init__(self, in_channels: int, out_channels: int,
-            kernel_size: List[int] = [2], nempty: bool = True):
+                 kernel_size: List[int] = [2], nempty: bool = True):
         super().__init__()
         self.norm = torch.nn.BatchNorm1d(out_channels)
         self.conv = ocnn.nn.OctreeConv(in_channels, out_channels, kernel_size,
-            stride=2, nempty=nempty, use_bias=True)
+                                       stride=2, nempty=nempty, use_bias=True)
 
     def forward(self, data: torch.Tensor, octree: Octree, depth: int):
         data = self.conv(data, octree, depth)
@@ -382,19 +427,19 @@ class Downsample(torch.nn.Module):
 
 class OctFormer(torch.nn.Module):
 
-    def __init__(self, 
-            channels: int = 192,
-            num_blocks: int = 16,
-            num_heads: int = 16,
-            patch_size: int = 26, dilation: int = 4, 
-            drop_path: float = 0.5, attn_drop: float = 0.1, proj_drop: float = 0.1,
-            nempty: bool = False, use_checkpoint: bool = True,
-            **kwargs):
+    def __init__(self,
+                 channels: int = 192,
+                 num_blocks: int = 16,
+                 num_heads: int = 16,
+                 patch_size: int = 26, dilation: int = 4,
+                 drop_path: float = 0.5, attn_drop: float = 0.1, proj_drop: float = 0.1,
+                 nempty: bool = False, use_checkpoint: bool = True,
+                 **kwargs):
         super().__init__()
         self.patch_size = patch_size
         self.dilation = dilation
         self.nempty = nempty
-        
+
         # self.patch_embed = ocnn.modules.OctreeConvBnRelu(in_channels, channels, kernel_size=[3], stride=1, nempty=nempty)
         self.layers = OctFormerStage(
             dim=channels, num_heads=num_heads, patch_size=patch_size,
@@ -402,11 +447,11 @@ class OctFormer(torch.nn.Module):
             dilation=dilation, nempty=nempty, num_blocks=num_blocks,
             attn_drop=attn_drop, proj_drop=proj_drop,
             use_checkpoint=use_checkpoint)
-            
 
-    def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int):
-        # data = self.patch_embed(data, octree, depth)
-        # from .octformer_backup import OctreeT
-        octree = OctreeT(octree, data.shape[0], self.patch_size, self.dilation, self.nempty, max_depth=depth_high, start_depth=depth_low)
-        data = self.layers(data, octree, depth_low, depth_high)
-        return data
+    def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int, past=None):
+        data_length = data.shape[0] + \
+            past.shape[1] if past is not None else data.shape[0]
+        octree = OctreeT(octree, data_length, self.patch_size, self.dilation,
+                         self.nempty, max_depth=depth_high, start_depth=depth_low)
+        data, presents = self.layers(data, octree, depth_low, depth_high, past)
+        return data, presents

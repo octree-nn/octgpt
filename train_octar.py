@@ -110,6 +110,7 @@ class OctarSolver(Solver):
         self.config_model()
         self.configure_log(set_writer=False)
         self.load_checkpoint()
+        self.model.eval()
         for iter in tqdm(range(10000), ncols=80):
             self.generate_iter(iter)
 
