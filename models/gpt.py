@@ -148,7 +148,6 @@ class GPT(nn.Module):
         past = torch.empty(
             (self.n_layer, 0, self.n_embed * 3), device=octree.device)
         # past = None
-        # past, token_embeddings, octree = torch.load(f"mytools/data/past_{get_rank()}.pth")
         for d in range(depth_low, depth_high + 1):
             # if not need to generate vq code
             if d == depth_high and vqvae == None:
@@ -161,8 +160,6 @@ class GPT(nn.Module):
             for i in tqdm(range(nnum_d)):
                 embeddings = token_embeddings + \
                     position_embeddings[:token_embeddings.shape[0], :]  # S x C
-                if token_embeddings.shape[0] == 4097:
-                    pass
                 if past is not None:
                     x = self.drop(embeddings[-1:])
                     x, presents = self.blocks(
@@ -188,9 +185,7 @@ class GPT(nn.Module):
                             [token_embeddings, vqvae.quantizer.embedding(ix)], dim=0)
             if d < depth_high:
                 octree = seq2octree(octree, split[-nnum_d:], d, d + 1)
-                utils.export_octree(
-                    octree, d + 1, f"mytools/octree_depth{d+1}/", index=0)
-                
-                torch.save([past, token_embeddings, octree], f"mytools/data/past_{get_rank()}.pth")
+                # utils.export_octree(
+                    # octree, d + 1, f"mytools/octree_depth{d+1}/", index=0)
 
         return octree, vq_indices
