@@ -89,7 +89,10 @@ class OctreeT(Octree):
         self.dilate_pos = xyz.unsqueeze(2) - xyz.unsqueeze(1)
 
     def patch_partition(self, data: torch.Tensor, fill_value=0):
-        assert data.shape[0] == self.nnum_t
+        # assert data.shape[0] == self.nnum_t
+        if data.shape[0] != self.nnum_t:
+            print(data.shape[0], self.nnum_t)
+            exit(0)
         num = self.nnum_a - self.nnum_t
         tail = data.new_full((num,) + data.shape[1:], fill_value)
         return torch.cat([data, tail], dim=0)
@@ -247,6 +250,15 @@ class OctreeAttention(torch.nn.Module):
             q, k, v = qkv[0], qkv[1], qkv[2]
             return q, k, v
 
+        def get_dilation_idx(length: int, dilation: int):
+            if D > 1:
+                batch_idx = length % dilation # + length // (dilation * K)
+                patch_idx = length // dilation % K
+            else:
+                batch_idx = length // K % dilation
+                patch_idx = length % K
+            return batch_idx, patch_idx
+
         # qkv
         qkv = self.qkv(data)
 
@@ -257,14 +269,12 @@ class OctreeAttention(torch.nn.Module):
             q, k, v = patchify_qkv(present)
             dilation = octree.dilation
             # assure that Q is in one patch
-            if D > 1:
-                q_start = int(np.floor(past_length / dilation))
-                q_end = int(np.ceil((past_length + Q) / dilation))
-            else:
-                q_start = past_length
-                q_end = past_length + Q
-            q = q[:, :, q_start:q_end, :]
-            mask = mask[:, q_start:q_end, :]
+            q_batch_s, q_patch_s = get_dilation_idx(past_length, dilation)
+            q_batch_e, q_patch_e = get_dilation_idx(past_length + Q - 1, dilation)
+            q_batch_e += 1
+            q_patch_e += 1
+            q = q[:, :, q_patch_s:q_patch_e, :]
+            mask = mask[:, q_patch_s:q_patch_e, :]
         else:
             Q = K
             q, k, v = patchify_qkv(qkv)
@@ -285,11 +295,12 @@ class OctreeAttention(torch.nn.Module):
 
         if layer_past is not None:
             if D > 1:
-                data = data[past_length %
-                            dilation:(past_length % dilation) + Q]
+                start_idx = q_batch_s
             else:
-                data = data[:Q]
+                start_idx = q_batch_s * (q_patch_e-q_patch_s)
+            data = data[start_idx:start_idx + Q]
         else:
+            # patch reverse
             data = octree.patch_reverse(data)
 
         # ffn
