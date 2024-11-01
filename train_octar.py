@@ -96,13 +96,17 @@ class OctarSolver(Solver):
         output = {'train/' + key: val for key, val in output.items()}
         return output
 
-    # rewrite the test_epoch function as generate
+    def test_step(self, batch):
+        with torch.no_grad():
+            output = self.model_forward(batch)
+        output = {'test/' + key: val for key, val in output.items()}
+        return output
+    
     def test_epoch(self, epoch):
-        # TODO: generate_iter has some bugs
-        # skip the test_epoch and just save the checkpoint
+        # super().test_epoch(epoch)
+        # generate the mesh
         if epoch % self.FLAGS.SOLVER.generate_every_epoch != 0:
             return
-        self.model.eval()
         self.generate_iter(epoch)
 
     def generate(self):
