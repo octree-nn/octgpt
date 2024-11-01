@@ -4,7 +4,7 @@ SOLVER:
 
   logdir: logs/shapenet_vae/vae
   max_epoch: 3000
-  test_every_epoch: 10
+  test_every_epoch: 1
   generate_every_epoch: 20
   log_per_iter: 50
   ckpt_num: 5

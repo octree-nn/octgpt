@@ -15,7 +15,7 @@ from utils.distributed import get_rank
 logger = logging.getLogger(__name__)
 
 
-def sample(logits, top_k=2, top_p=1.0, temperature=0.7):
+def sample(logits, top_k=2, top_p=1.0, temperature=1.0):
     logits = logits[-1, :] / temperature
     probs = F.softmax(logits, dim=-1)
 
@@ -186,6 +186,6 @@ class GPT(nn.Module):
             if d < depth_high:
                 octree = seq2octree(octree, split[-nnum_d:], d, d + 1)
                 # utils.export_octree(
-                    # octree, d + 1, f"mytools/octree_depth{d+1}/", index=0)
+                    # octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
 
         return octree, vq_indices
