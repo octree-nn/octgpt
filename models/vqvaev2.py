@@ -15,9 +15,9 @@ class Encoder(torch.nn.Module):
 
   def __init__(self, in_channels: int,
                channels: List[int] = [32, 64],
-               resblk_nums: List[int] = [1, 1],
-               groups: int = 32, **kwargs):
+               resblk_nums: List[int] = [1, 1], **kwargs):
     super().__init__()
+    groups = 32
     self.stage_num = len(channels)
     self.delta_depth = self.stage_num - 1
 
@@ -29,7 +29,6 @@ class Encoder(torch.nn.Module):
     self.downsample = torch.nn.ModuleList([ocnn.modules.OctreeConvGnRelu(
         channels[i], channels[i+1], groups, kernel_size=[2], stride=2)
         for i in range(self.stage_num - 1)])  # Note: self.stage_num - 1
-    # self.project = torch.nn.Linear(channels[-1], h_channels, use_bias=True)
 
   def forward(self, data: torch.Tensor, octree: Octree, depth: int):
     out = self.conv1(data, octree, depth)
@@ -38,7 +37,6 @@ class Encoder(torch.nn.Module):
       out = self.blocks[i](out, octree, di)
       if i < self.stage_num - 1:
         out = self.downsample[i](out, octree, di)
-    # out = self.project(out)
     return out
 
 
@@ -50,10 +48,10 @@ class Decoder(torch.nn.Module):
   '''
 
   def __init__(self, n_node_type: int,
-               encoder_blk_nums: List[int] = [2, 2, 3, 3],
-               decoder_blk_nums: List[int] = [3, 3, 2, 2, 1, 1],
                encoder_channels: List[int] = [32, 64, 128, 256],
+               encoder_blk_nums: List[int] = [1, 2, 4, 2],
                decoder_channels: List[int] = [256, 128, 64, 32, 32, 32],
+               decoder_blk_nums: List[int] = [2, 4, 2, 1, 1, 1],
                **kwargs):
     super().__init__()
     self.bottleneck = 2
@@ -94,7 +92,7 @@ class Decoder(torch.nn.Module):
         self.decoder_channels[i], self.decoder_channels[i],
         self.n_edge_type, n_node_types[i], self.norm_type,
         self.act_type, self.bottleneck, self.decoder_blk_nums[i],
-        self.resblk_type) for i in range(1, self.decoder_stages)])
+        self.resblk_type) for i in range(self.decoder_stages)])
 
     # header
     self.predict = torch.nn.ModuleList([ognn.nn.Prediction(
@@ -131,7 +129,7 @@ class Decoder(torch.nn.Module):
         if d in convs:
           skip = self._octree_align(convs[d], octree_in, octree_out, d)
           deconv = deconv + skip  # output-guided skip connections
-        deconv = self.decoder[i-1](deconv, octree_out, d)
+      deconv = self.decoder[i](deconv, octree_out, d)
 
       # predict the splitting label and signal
       logit = self.predict[i](deconv, octree_out, d)
@@ -156,7 +154,7 @@ class Decoder(torch.nn.Module):
               update_octree: bool = False):
     # run encoder and decoder
     convs = self.octree_encoder(code, octree_in, depth)
-    depth = depth - self.encoder_blk_nums
+    depth = depth - self.encoder_stages + 1
     output = self.octree_decoder(convs, octree_in, octree_out,
                                  depth, update_octree)
 
@@ -181,12 +179,11 @@ class VQVAE(torch.nn.Module):
                feature: str = 'ND',
                n_node_type: int = 7, **kwargs):
     super().__init__()
-    self.groups = 32
     self.feature = feature
     self.config_network()
 
     self.encoder = Encoder(
-        in_channels, self.enc_channels, self.enc_resblk_nums, self.groups)
+        in_channels, self.enc_channels, self.enc_resblk_nums)
     self.decoder = Decoder(
         n_node_type, self.dec_enc_channels, self.dec_enc_resblk_nums,
         self.dec_dec_channels, self.dec_dec_resblk_nums)
@@ -201,10 +198,10 @@ class VQVAE(torch.nn.Module):
     self.enc_channels = [32, 32, 64]
     self.enc_resblk_nums = [1, 1, 1]
 
-    self.dec_enc_resblk_nums = [2, 2, 3, 3]
-    self.dec_dec_resblk_nums = [3, 3, 2, 2, 1, 1]
     self.dec_enc_channels = [32, 64, 128, 256]
+    self.dec_enc_resblk_nums = [1, 2, 4, 2]
     self.dec_dec_channels = [256, 128, 64, 32, 32, 32]
+    self.dec_dec_resblk_nums = [2, 4, 2, 2, 1, 1]
 
   def forward(self, octree_in: Octree, octree_out: OctreeD,
               pos: torch.Tensor = None, update_octree: bool = False):
@@ -224,21 +221,23 @@ class VQVAE(torch.nn.Module):
     code = self.pre_proj(conv)    # project features to the vae code
     return code
 
-  def decode_code(self, code: torch.Tensor, code_depth: int, octree: OctreeD,
-                  pos: torch.Tensor = None, update_octree: bool = False):
+  def decode_code(self, code: torch.Tensor, code_depth: int, octree_in: OctreeD,
+                  octree_out: OctreeD, pos: torch.Tensor = None,
+                  update_octree: bool = False):
     # project the vae code to features
     data = self.post_proj(code)
 
     # `data` is defined on the octree, here we need pad zeros to be compatible
     # with the dual octree
-    data = octree.pad_zeros(data, code_depth)
+    data = octree_in.pad_zeros(data, code_depth)
 
     # run the decoder defined on dual octrees
-    output = self.decoder(data, octree, code_depth, update_octree)
+    output = self.decoder(data, code_depth, octree_in, octree_out,
+                          pos, update_octree)
 
     # setup mpu
-    depth_out = octree.depth
-    neural_mpu = mpu.NeuralMPU(output['signals'], octree, depth_out)
+    depth_out = octree_out.depth
+    neural_mpu = mpu.NeuralMPU(output['signals'], octree_out, depth_out)
 
     # compute function value with mpu
     if pos is not None:
