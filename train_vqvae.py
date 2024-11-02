@@ -6,7 +6,8 @@ from thsolver import Solver
 from ognn.octreed import OctreeD
 
 from utils import utils
-from models.vqvae import VQVAE
+# from models.vqvae import VQVAE
+from models.vqvaev2 import VQVAE
 from datasets import get_shapenet_vae_dataset
 
 
