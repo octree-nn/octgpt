@@ -8,7 +8,7 @@ from ognn.octreed import OctreeD
 from utils import utils
 from utils.distributed import get_rank
 from models.vqvae import VQVAE
-from models.gpt import GPT
+from models.gpt_k import GPT
 from datasets import get_shapenet_vae_dataset
 from tqdm import tqdm
 os.environ['TORCH_NCCL_BLOCKING_WAIT'] = '1'

@@ -244,8 +244,7 @@ class OctreeAttention(torch.nn.Module):
             # patch partition
             qkv = octree.patch_partition(qkv)
             if D > 1:    # dilation
-                qkv = qkv.view(-1, K, D, C * 3).transpose(1,
-                                                          2).reshape(-1, C * 3)
+                qkv = qkv.view(-1, K, D, C * 3).transpose(1, 2).reshape(-1, C * 3)
             qkv = qkv.view(-1, K, C * 3)
             qkv = qkv.reshape(-1, K, 3, H, C // H).permute(2, 0, 3, 1, 4)
             q, k, v = qkv[0], qkv[1], qkv[2]
@@ -253,7 +252,7 @@ class OctreeAttention(torch.nn.Module):
 
         def get_dilation_idx(length: int, dilation: int):
             if D > 1:
-                batch_idx = length % dilation  # + length // (dilation * K)
+                batch_idx = length % dilation # + length // (dilation * K)
                 patch_idx = length // dilation % K
             else:
                 batch_idx = length // K % dilation
@@ -264,17 +263,17 @@ class OctreeAttention(torch.nn.Module):
         qkv = self.qkv(data)
 
         if layer_past is not None:
-            Q = qkv.shape[0]   # num of queries
+            data_length = data.shape[0]
             present = torch.cat([layer_past, qkv], dim=0)
             past_length = layer_past.shape[0]
             q, k, v = patchify_qkv(present)
             dilation = octree.dilation
             # assure that Q is in one patch
             q_batch_s, q_patch_s = get_dilation_idx(past_length, dilation)
-            q_batch_e, q_patch_e = get_dilation_idx(
-                past_length + Q - 1, dilation)
+            q_batch_e, q_patch_e = get_dilation_idx(past_length + data_length - 1, dilation)
             q_batch_e += 1
             q_patch_e += 1
+            Q = q_patch_e - q_patch_s
             q = q[:, :, q_patch_s:q_patch_e, :]
             mask = mask[:, q_patch_s:q_patch_e, :]
         else:
@@ -300,7 +299,7 @@ class OctreeAttention(torch.nn.Module):
                 start_idx = q_batch_s
             else:
                 start_idx = q_batch_s * (q_patch_e-q_patch_s)
-            data = data[start_idx:start_idx + Q]
+            data = data[start_idx:start_idx + data_length]
         else:
             # patch reverse
             data = octree.patch_reverse(data)
@@ -355,7 +354,7 @@ class OctFormerBlock(torch.nn.Module):
 
 class OctFormerStage(torch.nn.Module):
 
-    def __init__(self, dim: int, num_heads: int, patch_size: int = 32, num_pred_tokens: int = 1,
+    def __init__(self, dim: int, num_heads: int, patch_size: int = 32,
                  dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
                  qk_scale: Optional[float] = None, attn_drop: float = 0.0,
                  proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
@@ -369,7 +368,7 @@ class OctFormerStage(torch.nn.Module):
         self.num_norms = (num_blocks - 1) // self.interval
 
         self.blocks = torch.nn.ModuleList([octformer_block(
-            dim=dim, num_heads=num_heads, patch_size=patch_size, num_pred_tokens=num_pred_tokens,
+            dim=dim, num_heads=num_heads, patch_size=patch_size,
             dilation=1 if (i % 2 == 0) else dilation,
             mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
             attn_drop=attn_drop, proj_drop=proj_drop,
@@ -443,7 +442,6 @@ class OctFormer(torch.nn.Module):
                  channels: int = 192,
                  num_blocks: int = 16,
                  num_heads: int = 16,
-                 num_pred_tokens: int = 1,
                  patch_size: int = 26, dilation: int = 4,
                  drop_path: float = 0.5, attn_drop: float = 0.1, proj_drop: float = 0.1,
                  nempty: bool = False, use_checkpoint: bool = True,
@@ -457,7 +455,7 @@ class OctFormer(torch.nn.Module):
         self.layers = OctFormerStage(
             dim=channels, num_heads=num_heads, patch_size=patch_size,
             # drop_path=torch.linspace(0, drop_path, num_blocks).tolist(),
-            dilation=dilation, nempty=nempty, num_blocks=num_blocks, num_pred_tokens=num_pred_tokens,
+            dilation=dilation, nempty=nempty, num_blocks=num_blocks,
             attn_drop=attn_drop, proj_drop=proj_drop,
             use_checkpoint=use_checkpoint)
 

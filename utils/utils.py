@@ -437,7 +437,7 @@ def set_requires_grad(model, bool):
         p.requires_grad = bool
 
 def sample(logits, top_k=None, top_p=None, temperature=1.0):
-    logits = logits[-1, :] / temperature
+    logits = logits / temperature
     probs = F.softmax(logits, dim=-1)
 
     # top-k
@@ -459,4 +459,4 @@ def sample(logits, top_k=None, top_p=None, temperature=1.0):
         probs[indices_to_remove] = 0
 
     ix = torch.multinomial(probs, num_samples=1)
-    return ix
+    return ix.squeeze(1)

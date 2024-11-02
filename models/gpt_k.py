@@ -9,7 +9,7 @@ import copy
 # from transformers import top_k_top_p_filtering
 from tqdm import tqdm
 from utils.utils import seq2octree, sample
-from models.octformer import OctFormer, SinPosEmb
+from models.octformer_k import OctFormer, SinPosEmb
 from utils.distributed import get_rank
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ class GPT(nn.Module):
         super(GPT, self).__init__()
         self.n_embed = n_embed
         self.n_layer = n_layer
+        self.num_pred_tokens = num_pred_tokens
 
         self.pos_emb = SinPosEmb(n_embed)
 
@@ -37,7 +38,7 @@ class GPT(nn.Module):
 
         self.drop = nn.Dropout(embed_drop)
         self.blocks = OctFormer(channels=n_embed, num_blocks=n_layer, num_heads=n_head,
-                                patch_size=4096, dilation=2, num_pred_tokens=num_pred_tokens, nempty=False, use_checkpoint=True)
+                                patch_size=4096, dilation=2, nempty=False, use_checkpoint=True)
 
         self.ln_x = nn.LayerNorm(n_embed)
         self.split_head = nn.Linear(n_embed, split_size)
@@ -80,7 +81,7 @@ class GPT(nn.Module):
             targets = torch.cat([targets, indices], dim=0)
 
         embeddings = torch.cat(
-            [cond, x_token_embeddings], dim=0)[:-1]  # (1+S) x C
+            [cond.repeat(self.num_pred_tokens, 1), x_token_embeddings], dim=0)[:-self.num_pred_tokens]  # (1+S) x C
         embeddings = embeddings + \
             position_embeddings[:embeddings.shape[0]]  # S x C
 
@@ -115,13 +116,14 @@ class GPT(nn.Module):
             category = torch.zeros(1).long().to(octree.device)
         cond = self.class_emb(category)  # 1 x C
 
-        token_embeddings = cond  # 1 x C
-        split = torch.tensor([], device=octree.device).long()
-        vq_indices = torch.tensor([], device=octree.device).long()
+        token_embeddings = cond.repeat(self.num_pred_tokens, 1)  # 1 x C
+        split = torch.empty((0, ), device=octree.device).long()
+        vq_indices = torch.empty((0, ), device=octree.device).long()
 
         past = torch.empty(
             (self.n_layer, 0, self.n_embed * 3), device=octree.device)
         # past = None
+        total_nnum = 0
         for d in range(depth_low, depth_high + 1):
             # if not need to generate vq code
             if d == depth_high and vqvae == None:
@@ -130,33 +132,43 @@ class GPT(nn.Module):
             position_embeddings = self.pos_emb(
                 octree, octree.full_depth, d)  # S x C
             nnum_d = octree.nnum[d]
+            total_nnum += nnum_d
+            num_iters = (nnum_d + self.num_pred_tokens - 1) // self.num_pred_tokens
 
-            for i in tqdm(range(nnum_d)):
+            for i in tqdm(range(num_iters)):
                 embeddings = token_embeddings + \
                     position_embeddings[:token_embeddings.shape[0], :]  # S x C
                 if past is not None:
-                    x = self.drop(embeddings[-1:])
+                    x = self.drop(embeddings[-self.num_pred_tokens:])
                     x, presents = self.blocks(
                         x, octree, depth_low, d, past)  # B x S x C
                     past = torch.stack(presents, dim=0)
                 else:
                     x = self.drop(embeddings)
                     x, _ = self.blocks(x, octree, depth_low, d)  # B x S x C
+                    x = x[-self.num_pred_tokens:]
                 x = self.ln_x(x)
 
                 if d < depth_high:
-                    split_logits = self.split_head(x[-1:, :])
+                    split_logits = self.split_head(x[-self.num_pred_tokens:, :])
                     ix = sample(split_logits)
                     split = torch.cat([split, ix], dim=0)
                     token_embeddings = torch.cat(
                         [token_embeddings, self.split_emb(ix)], dim=0)
+                    if split.shape[0] > total_nnum:
+                        split = split[:total_nnum]
+                        token_embeddings = token_embeddings[:total_nnum]
                 else:
-                    vq_logits = self.vq_head(x[-1:, :])
+                    vq_logits = self.vq_head(x[-self.num_pred_tokens:, :])
                     ix = sample(vq_logits)
                     vq_indices = torch.cat([vq_indices, ix], dim=0)
                     with torch.no_grad():
                         token_embeddings = torch.cat(
                             [token_embeddings, vqvae.quantizer.embedding(ix)], dim=0)
+                    if vq_indices.shape[0] > total_nnum:
+                        vq_indices = vq_indices[:total_nnum]
+                        token_embeddings = token_embeddings[:total_nnum]
+            
             if d < depth_high:
                 octree = seq2octree(octree, split[-nnum_d:], d, d + 1)
                 # utils.export_octree(
