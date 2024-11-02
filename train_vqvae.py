@@ -28,8 +28,21 @@ class VAESolver(Solver):
     batch['pos'].requires_grad_()
 
   def compute_loss(self, batch, model_out):
+    # octree loss
+    output = ognn.loss.compute_octree_loss(
+        model_out['logits'], model_out['octree_out'])
+
+    # regression loss
+    mpus = model_out['mpus']
+    grads = ognn.loss.compute_mpu_gradients(mpus, batch['pos'])
+    for d in mpus.keys():
+      sdf = mpus[d]  # TODO: tune the loss weights and `flgs`
+      reg_loss = ognn.loss.sdf_reg_loss(
+          sdf, grads[d], batch['sdf'], batch['grad'], '_%d' % d)
+      output.update(reg_loss)
+
+    # vq loss
     flags = self.FLAGS.LOSS
-    output = ognn.loss.shapenet_loss(batch, model_out, flags.loss_type, **flags)
     output['vq_loss'] = flags.vq_weight * model_out['vq_loss']
     return output
 
