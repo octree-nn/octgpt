@@ -21,6 +21,7 @@ class GPT(nn.Module):
                  n_head=8,
                  n_layer=8,
                  num_classes=1,
+                 num_pred_tokens=2,
                  split_size=2,
                  vq_size=128,
                  embed_drop=0.1,
@@ -36,7 +37,7 @@ class GPT(nn.Module):
 
         self.drop = nn.Dropout(embed_drop)
         self.blocks = OctFormer(channels=n_embed, num_blocks=n_layer, num_heads=n_head,
-                                patch_size=4096, dilation=2, nempty=False, use_checkpoint=True)
+                                patch_size=4096, dilation=2, num_pred_tokens=num_pred_tokens, nempty=False, use_checkpoint=True)
 
         self.ln_x = nn.LayerNorm(n_embed)
         self.split_head = nn.Linear(n_embed, split_size)

@@ -21,6 +21,7 @@ import os
 from ocnn.nn import octree2voxel, octree_pad
 from tqdm import tqdm
 import copy
+import torch.nn.functional as F
 # autopep8: on
 
 def get_mgrid(size, dim=3):
@@ -434,3 +435,28 @@ def seq2octree(octree, seq, depth_low, depth_high, threshold = 0.0):
 def set_requires_grad(model, bool):
     for p in model.parameters():
         p.requires_grad = bool
+
+def sample(logits, top_k=None, top_p=None, temperature=1.0):
+    logits = logits[-1, :] / temperature
+    probs = F.softmax(logits, dim=-1)
+
+    # top-k
+    if top_k is not None:
+        topk, indices = torch.topk(probs, k=top_k, dim=-1)
+        probs = torch.zeros(*probs.shape).to(probs.device).scatter_(1, indices, topk)
+
+    # top-p
+    if top_p is not None:
+        sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+        cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+        sorted_indices_to_remove = cumulative_probs > top_p
+
+        sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+        sorted_indices_to_remove[..., 0] = False
+
+        indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+        probs[indices_to_remove] = 0
+
+    ix = torch.multinomial(probs, num_samples=1)
+    return ix
