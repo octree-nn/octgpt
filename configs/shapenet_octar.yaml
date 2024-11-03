@@ -82,6 +82,7 @@ MODEL:
   vqvae_ckpt: saved_ckpt/vqvae_model.pth
   enable_vqvae: False
   find_unused_parameters: True
+  model_name: GPT
 
   VQVAE:
     name: vae
@@ -93,13 +94,18 @@ MODEL:
     feature: ND
   
   GPT:
-    n_embed: 256
-    n_head: 8
-    n_layer: 8
+    num_embed: 256
+    num_head: 8
+    num_blocks: 8
     num_classes: 1
     split_size: 2
     vq_size: 128
-    embed_drop: 0.1
+    patch_size: 4096
+    dilation: 2
+    drop_rate: 0.1
+    use_checkpoint: True
+    mask_ratio_min: 0.7
+    num_pred_tokens: 2
     
   
 

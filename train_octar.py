@@ -8,7 +8,8 @@ from ognn.octreed import OctreeD
 from utils import utils
 from utils.distributed import get_rank
 from models.vqvae import VQVAE
-from models.gpt_k import GPT
+from models.gpt import GPT
+from models.mar import MAR
 from datasets import get_shapenet_vae_dataset
 from tqdm import tqdm
 os.environ['TORCH_NCCL_BLOCKING_WAIT'] = '1'
@@ -24,7 +25,13 @@ class OctarSolver(Solver):
 
     def get_model(self):
         flags = self.FLAGS.MODEL
-        model = GPT(**flags.GPT)
+        if flags.model_name == "GPT":
+            model = GPT(**flags.GPT)
+        elif flags.model_name == "MAR":
+            model = MAR(**flags.GPT)
+        else:
+            raise NotImplementedError("Model not implemented")
+        
         vqvae = VQVAE(**flags.VQVAE)
         model.cuda(device=self.device)
         vqvae.cuda(device=self.device)
@@ -51,10 +58,6 @@ class OctarSolver(Solver):
                 module=model, device_ids=[self.device],
                 output_device=self.device, broadcast_buffers=False,
                 find_unused_parameters=flags.find_unused_parameters)
-            # vqvae = torch.nn.parallel.DistributedDataParallel(
-            #     module=vqvae, device_ids=[self.device],
-            #     output_device=self.device, broadcast_buffers=False,
-            #     find_unused_parameters=flags.find_unused_parameters)
             self.model_module = model.module
         else:
             self.model_module = model

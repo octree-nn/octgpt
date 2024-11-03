@@ -263,16 +263,17 @@ class OctreeAttention(torch.nn.Module):
         qkv = self.qkv(data)
 
         if layer_past is not None:
-            Q = qkv.shape[0]   # num of queries
+            data_length = data.shape[0]
             present = torch.cat([layer_past, qkv], dim=0)
             past_length = layer_past.shape[0]
             q, k, v = patchify_qkv(present)
             dilation = octree.dilation
             # assure that Q is in one patch
             q_batch_s, q_patch_s = get_dilation_idx(past_length, dilation)
-            q_batch_e, q_patch_e = get_dilation_idx(past_length + Q - 1, dilation)
+            q_batch_e, q_patch_e = get_dilation_idx(past_length + data_length - 1, dilation)
             q_batch_e += 1
             q_patch_e += 1
+            Q = q_patch_e - q_patch_s
             q = q[:, :, q_patch_s:q_patch_e, :]
             mask = mask[:, q_patch_s:q_patch_e, :]
         else:
@@ -298,7 +299,7 @@ class OctreeAttention(torch.nn.Module):
                 start_idx = q_batch_s
             else:
                 start_idx = q_batch_s * (q_patch_e-q_patch_s)
-            data = data[start_idx:start_idx + Q]
+            data = data[start_idx:start_idx + data_length]
         else:
             # patch reverse
             data = octree.patch_reverse(data)
