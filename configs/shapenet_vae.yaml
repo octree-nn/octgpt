@@ -37,15 +37,15 @@ DATA:
     surface_sample_num: &surface_sample_num 10000
 
     # no data augmentation
-    distort: &distort False
+    distort: True
 
     # data loading
     # location: &location data/ShapeNet/dataset_10w
     # filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
     location: &location data/ShapeNet-vae
     filelist: data/ShapeNet-vae/filelist/train_airplane.txt
-    load_pointcloud: &load_pointcloud True
-    load_sdf: &load_sdf True
+    load_pointcloud: True
+    load_sdf: True
     batch_size: 2
     shuffle: True
 
@@ -62,15 +62,15 @@ DATA:
     surface_sample_num: *surface_sample_num
 
     # no data augmentation
-    distort: *distort
+    distort: True
 
     # data loading
     location: *location
     # filelist: *filelist
     filelist: data/ShapeNet-vae/filelist/val_airplane.txt
     batch_size: 1
-    load_pointcloud: *load_pointcloud
-    load_sdf: *load_sdf
+    load_pointcloud: True
+    load_sdf: True
     shuffle: False
 
 

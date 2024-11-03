@@ -51,8 +51,8 @@ class VAESolver(Solver):
 
   def model_forward(self, batch):
     self.batch_to_cuda(batch)
-    octree_in = batch['octree']
-    octree_gt = OctreeD(batch['octree'])
+    octree_in = batch['octree_in']
+    octree_gt = OctreeD(batch['octree_gt'])
     model_out = self.model(octree_in, octree_gt, batch['pos'])
 
     output = self.compute_loss(batch, model_out)
@@ -72,7 +72,7 @@ class VAESolver(Solver):
 
   def eval_step(self, batch):
     # forward the model
-    octree_in = batch['octree'].cuda()
+    octree_in = batch['octree_in'].cuda()
     octree_out = OctreeD(octree_in)
     output = self.model.forward(octree_in, octree_out, update_octree=True)
 
