@@ -15,6 +15,7 @@ class TransformShape:
     self.volume_sample_num = flags.volume_sample_num
     self.surface_sample_num = flags.surface_sample_num
     self.points_scale = 0.5  # the points are in [-0.5, 0.5]
+    self.noise_std = 0.005
 
     self.depth = flags.depth
     self.full_depth = flags.full_depth
@@ -35,8 +36,26 @@ class TransformShape:
     points_gt.clip(min=-1, max=1)
     octree_gt = self.points2octree(points_gt)
 
+    if self.flags.distort:
+      # randomly sample points and add noise
+      # Since we rescale points to [-1.0, 1.0] in Line 24, we also need to
+      # rescale the `noise_std` here to make sure the `noise_std` is always
+      # 0.5% of the bounding box size.
+      noise_std = torch.rand(1) * self.noise_std / self.points_scale
+      points_noise = points + noise_std * torch.randn_like(points)
+      normals_noise = normals + noise_std * torch.randn_like(normals)
+
+      # transform noisy points to octree
+      points_in = Points(points=points_noise, normals=normals_noise)
+      points_in.clip(-1.0, 1.0)
+      octree_in = self.points2octree(points_in)
+    else:
+      points_in = points_gt
+      octree_in = octree_gt
+
     # construct the output dict
-    return {'octree': octree_gt, 'points_in': points}
+    return {'octree_in': octree_in, 'points_in': points_in,
+            'octree_gt': octree_gt, 'points_gt': points_gt}
 
   def sample_volume(self, sample):
     sdf = sample['sdf']
@@ -100,8 +119,8 @@ def collate_func(batch):
   output = ocnn.dataset.CollateBatch(merge_points=False)(batch)
 
   if 'pos' in output:
-    batch_idx = torch.cat([torch.ones(pos.size(0), 1) * i
-                           for i, pos in enumerate(output['pos'])], dim=0)
+    bi = [torch.ones(pos.size(0), 1) * i for i, pos in enumerate(output['pos'])]
+    batch_idx = torch.cat(bi, dim=0)
     pos = torch.cat(output['pos'], dim=0)
     output['pos'] = torch.cat([pos, batch_idx], dim=1)
 
