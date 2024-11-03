@@ -52,6 +52,7 @@ class Decoder(torch.nn.Module):
                encoder_blk_nums: List[int] = [1, 2, 4, 2],
                decoder_channels: List[int] = [256, 128, 64, 32, 32, 32],
                decoder_blk_nums: List[int] = [2, 4, 2, 1, 1, 1],
+               mpu_stage_nums: int = 2,
                **kwargs):
     super().__init__()
     self.bottleneck = 2
@@ -98,9 +99,10 @@ class Decoder(torch.nn.Module):
     self.predict = torch.nn.ModuleList([ognn.nn.Prediction(
         self.decoder_channels[i], self.head_channel, 2, self.norm_type,
         self.act_type) for i in range(self.decoder_stages)])
+    self.start_mpu = self.decoder_stages - mpu_stage_nums
     self.regress = torch.nn.ModuleList([ognn.nn.Prediction(
         self.decoder_channels[i], self.head_channel, 4, self.norm_type,
-        self.act_type) for i in range(self.decoder_stages)])
+        self.act_type) for i in range(self.start_mpu, self.decoder_stages)])
 
   def _octree_align(self, value: torch.Tensor, octree: OctreeD,
                     octree_query: OctreeD, depth: int):
@@ -137,8 +139,10 @@ class Decoder(torch.nn.Module):
       logits[d] = logit[-nnum:]
 
       # regress signals and pad zeros to non-leaf nodes
-      signal = self.regress[i](deconv, octree_out, d)
-      signals[d] = self.graph_pad(signal, octree_out, d)
+      if i >= self.start_mpu:
+        j = i - self.start_mpu
+        signal = self.regress[j](deconv, octree_out, d)
+        signals[d] = self.graph_pad(signal, octree_out, d)
 
       # update the octree according to predicted labels
       if update_octree:

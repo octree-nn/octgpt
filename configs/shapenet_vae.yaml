@@ -5,7 +5,7 @@ SOLVER:
   logdir: logs/shapenet_vae/vae
   max_epoch: 300
   test_every_epoch: 20
-  log_per_iter: 50
+  log_per_iter: 20
   ckpt_num: 40
   port: 10001
 
@@ -40,8 +40,10 @@ DATA:
     distort: &distort False
 
     # data loading
-    location: &location data/ShapeNet/dataset_10w
-    filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
+    # location: &location data/ShapeNet/dataset_10w
+    # filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
+    location: &location data/ShapeNet-vae
+    filelist: data/ShapeNet-vae/filelist/train_airplane.txt
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf True
     batch_size: 2
@@ -64,7 +66,8 @@ DATA:
 
     # data loading
     location: *location
-    filelist: *filelist
+    # filelist: *filelist
+    filelist: data/ShapeNet-vae/filelist/val_airplane.txt
     batch_size: 1
     load_pointcloud: *load_pointcloud
     load_sdf: *load_sdf
@@ -82,5 +85,6 @@ MODEL:
 
 LOSS:
   name: shapenet_vae_loss
-  loss_type: sdf_reg_loss
   vq_weight: 0.5
+  mpu_keys: [7, 8]
+  mpu_weights: [1.0, 1.0]

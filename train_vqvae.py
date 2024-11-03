@@ -33,16 +33,19 @@ class VAESolver(Solver):
         model_out['logits'], model_out['octree_out'])
 
     # regression loss
+    wg, ws = 1.0, 200.0
+    flags = self.FLAGS.LOSS
     mpus = model_out['mpus']
-    grads = ognn.loss.compute_mpu_gradients(mpus, batch['pos'])
-    for d in mpus.keys():
-      sdf = mpus[d]  # TODO: tune the loss weights and `flgs`
-      reg_loss = ognn.loss.sdf_reg_loss(
-          sdf, grads[d], batch['sdf'], batch['grad'], '_%d' % d)
-      output.update(reg_loss)
+    R = [(d, w) for d, w in zip(flags.mpu_keys, flags.mpu_weights) if d in mpus]
+    for d, w in R:
+      sdf = mpus[d]
+      grad = ognn.loss.compute_gradient(sdf, batch['pos'])[:, :3]
+      grad_loss = (grad - batch['grad']).pow(2).mean() * (wg * w)
+      sdf_loss = (sdf - batch['sdf']).pow(2).mean() * (ws * w)
+      output['grad_loss_%d' % d] = grad_loss
+      output['sdf_loss_%d' % d] = sdf_loss
 
     # vq loss
-    flags = self.FLAGS.LOSS
     output['vq_loss'] = flags.vq_weight * model_out['vq_loss']
     return output
 
