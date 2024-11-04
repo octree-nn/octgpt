@@ -53,7 +53,7 @@ class MAR(nn.Module):
 
         self.mask_ratio_generator = stats.truncnorm(
             (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
-        
+
         self.apply(self._init_weights)  # initialize weights
         logger.info("number of parameters: %e", sum(p.numel()
                     for p in self.parameters()))
@@ -73,12 +73,15 @@ class MAR(nn.Module):
             mask_rate = self.mask_ratio_generator.rvs(1)[0]
         num_masked_tokens = max(int(np.ceil(seq_len * mask_rate)), 1)
         return self.mask_by_order(num_masked_tokens, orders)
-    
+
     def mask_by_order(self, mask_len, orders):
         mask = torch.zeros(orders.shape[0], device=orders.device).long()
         mask[orders[:mask_len]] = 1
         return mask
 
+    def get_depth_index(self, octree, depth_low, depth_high):
+        return torch.cat([torch.ones(octree.nnum[d], device=octree.device).long() * d for d in range(depth_low, depth_high + 1)])
+    
     def forward(self, split, octree_in, depth_low, depth_high, category=None, vqvae=None):
         targets = copy.deepcopy(split)
 
@@ -107,8 +110,11 @@ class MAR(nn.Module):
         mask = self.random_masking(seq_len, orders)
         x_token_embeddings[mask.bool()] = cond
         x = x_token_embeddings + position_embeddings[:seq_len]
+        
+        # get depth index
+        depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
 
-        x, presents = self.blocks(x, octree_in, depth_low, depth_high)
+        x, presents = self.blocks(x, octree_in, depth_low, depth_high, past=None, group_idx=depth_idx)
         x = self.ln_x(x)
 
         output = {}
@@ -133,10 +139,11 @@ class MAR(nn.Module):
             category = torch.zeros(1).long().to(octree.device)
         cond = self.class_emb(category)  # 1 x C
 
-        token_embeddings = torch.empty((0, self.num_embed), device=octree.device)
+        token_embeddings = torch.empty(
+            (0, self.num_embed), device=octree.device)
 
         # past = torch.empty(
-            # (self.n_layer, 0, self.n_embed * 3), device=octree.device)
+        # (self.n_layer, 0, self.n_embed * 3), device=octree.device)
         past = None
         for d in range(depth_low, depth_high + 1):
             # if not need to generate vq code
@@ -145,38 +152,44 @@ class MAR(nn.Module):
 
             position_embeddings = self.pos_emb(
                 octree, octree.full_depth, d)  # S x C
+            # get depth index
+            depth_idx = self.get_depth_index(octree, depth_low, d)
             nnum_d = octree.nnum[d]
-            
+
             mask = torch.ones(nnum_d, device=octree.device).long()
-            token_indices = -1 * torch.ones(nnum_d, device=octree.device).long()
+            token_indices = -1 * \
+                torch.ones(nnum_d, device=octree.device).long()
             token_embedding_d = cond.repeat(nnum_d, 1)
             orders = torch.randperm(nnum_d, device=octree.device)
 
             for i in tqdm(range(self.num_iters)):
                 x = torch.cat([token_embeddings, token_embedding_d], dim=0)
                 x = x + position_embeddings[:x.shape[0], :]
-                x, _ = self.blocks(x, octree, depth_low, d)  # B x S x C
+                x, _ = self.blocks(x, octree, depth_low, d, group_idx=depth_idx)  # B x S x C
                 x = x[-nnum_d:, :]
                 x = self.ln_x(x)
-                
+
                 # mask ratio for the next round, following MaskGIT and MAGE.
                 mask_ratio = np.cos(math.pi / 2. * (i + 1) / self.num_iters)
                 mask_len = torch.Tensor([np.floor(nnum_d * mask_ratio)]).cuda()
 
                 # masks out at least one for the next iteration
-                mask_len = torch.maximum(torch.Tensor([1]).cuda(), torch.minimum(torch.sum(mask, dim=-1, keepdims=True) - 1, mask_len)).long()
+                mask_len = torch.maximum(torch.Tensor([1]).cuda(), torch.minimum(
+                    torch.sum(mask, dim=-1, keepdims=True) - 1, mask_len)).long()
 
                 # get masking for next iteration and locations to be predicted in this iteration
                 mask_next = self.mask_by_order(mask_len, orders)
-                
+
                 if i >= self.num_iters - 1:
                     mask_to_pred = mask.bool()
                 else:
-                    mask_to_pred = torch.logical_xor(mask.bool(), mask_next.bool())
+                    mask_to_pred = torch.logical_xor(
+                        mask.bool(), mask_next.bool())
                 mask = mask_next
 
-                temperature = self.start_temperature * ((self.num_iters - i) / self.num_iters)
-                
+                temperature = self.start_temperature * \
+                    ((self.num_iters - i) / self.num_iters)
+
                 if d < depth_high:
                     split_logits = self.split_head(x[mask_to_pred])
                     ix = sample(split_logits, temperature=temperature)
@@ -187,17 +200,18 @@ class MAR(nn.Module):
                     ix = sample(vq_logits, temperature=temperature)
                     token_indices[mask_to_pred] = ix
                     with torch.no_grad():
-                        token_embedding_d[mask_to_pred] = vqvae.quantizer.embedding(ix)
-            
-            token_embeddings = torch.cat([token_embeddings, token_embedding_d], dim=0)
-            
+                        token_embedding_d[mask_to_pred] = vqvae.quantizer.embedding(
+                            ix)
+
+            token_embeddings = torch.cat(
+                [token_embeddings, token_embedding_d], dim=0)
+
             if d < depth_high:
                 split = token_indices
                 octree = seq2octree(octree, split, d, d + 1)
                 # utils.export_octree(
-                    # octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
+                # octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
             else:
                 vq_indices = token_indices
-            
 
         return octree, vq_indices

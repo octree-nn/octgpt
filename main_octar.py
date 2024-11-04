@@ -77,7 +77,7 @@ class OctarSolver(Solver):
 
     def model_forward(self, batch):
         self.batch_to_cuda(batch)
-        octree_in = batch['octree']
+        octree_in = batch['octree_gt']
 
         # For testing VQVAE
         # vq_code = self.vqvae.extract_code(octree_in)
