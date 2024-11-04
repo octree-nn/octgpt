@@ -18,10 +18,6 @@ SOLVER:
   lr_type: poly
   step_size: (160,240)
 
-  # sdf
-  resolution: 128       # the resolution used for marching cubes
-  save_sdf: False       # save the sdfs in evaluation
-  sdf_scale: 0.9        # the scale of sdfs
 
 DATA:
   train:
@@ -36,7 +32,7 @@ DATA:
     volume_sample_num: &volume_sample_num 10000
     surface_sample_num: &surface_sample_num 10000
 
-    # no data augmentation
+    # data augmentation
     distort: True
 
     # data loading
@@ -61,7 +57,7 @@ DATA:
     volume_sample_num: *volume_sample_num
     surface_sample_num: *surface_sample_num
 
-    # no data augmentation
+    # data augmentation
     distort: True
 
     # data loading
@@ -73,6 +69,11 @@ DATA:
     load_sdf: True
     shuffle: False
 
+    # for extracting meshes
+    resolution: 300       # the resolution used for marching cubes
+    save_sdf: False       # save the sdfs in evaluation
+    with_color: False     # extract colored mesh
+    sdf_scale: 0.9        # the scale of sdfs
 
 MODEL:
   name: vae

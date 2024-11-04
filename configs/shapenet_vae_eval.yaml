@@ -1,0 +1,48 @@
+SOLVER:
+  gpu: 0,
+  run: evaluate
+  logdir: logs/shapenet_vae_eval/vae
+  ckpt: logs/shapenet_vae/vae_10251120/best_model.pth
+
+
+DATA:
+  test:
+    name: shapenet_vae
+
+    # octree building
+    depth: 8
+    full_depth: 3
+    point_scale: 0.5  # the scale of point clouds
+
+    # sdf & color samples
+    volume_sample_num: 10000
+    surface_sample_num: 10000
+
+    # data augmentation
+    distort: True
+
+    # data loading
+    location: data/ShapeNet-vae
+    filelist: data/ShapeNet-vae/filelist/val_airplane.txt
+    batch_size: 1
+    load_pointcloud: True
+    load_sdf: False
+    shuffle: False
+    # num_workers: 0
+
+    # for extracting meshes
+    resolution: 300       # the resolution used for marching cubes
+    save_sdf: False       # save the sdfs in evaluation
+    with_color: False     # extract colored mesh
+    sdf_scale: 0.9        # the scale of sdfs
+
+MODEL:
+  name: vae
+
+  in_channels: 4
+  out_channels: 4
+  embedding_sizes: 128
+  embedding_channels: 256
+  feature: ND
+
+  depth_out: 8

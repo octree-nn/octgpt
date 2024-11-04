@@ -81,7 +81,7 @@ class TransformShape:
   def __call__(self, sample, idx):
     output = self.process_points_cloud(sample['point_cloud'])
 
-    if "load_sdf" in self.flags and self.flags.load_sdf:
+    if self.flags.get('load_sdf'):
       samples = self.sample_volume(sample['sdf'])
       surface = self.sample_surface(sample['point_cloud'])
       for key in samples.keys():
@@ -99,14 +99,14 @@ class ReadFile:
   def __call__(self, filename):
     # load the input point cloud
     output = {}
-    if "load_pointcloud" in self.flags and self.flags.load_pointcloud:
+    if self.flags.get('load_pointcloud'):
       filename_pc = os.path.join(filename, 'pointcloud.npz')
       raw = np.load(filename_pc)
       point_cloud = {'points': raw['points'], 'normals': raw['normals']}
       output['point_cloud'] = point_cloud
 
     # load the target sdfs and gradients
-    if "load_sdf" in self.flags and self.flags.load_sdf:
+    if self.flags.get('load_sdf'):
       filename_sdf = os.path.join(filename, 'sdf.npz')
       raw = np.load(filename_sdf)
       sdf = {'points': raw['points'], 'grad': raw['grad'], 'sdf': raw['sdf']}
