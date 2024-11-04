@@ -142,6 +142,7 @@ class MAR(nn.Module):
         token_embeddings = torch.empty(
             (0, self.num_embed), device=octree.device)
 
+        vq_indices = None
         # past = torch.empty(
         # (self.n_layer, 0, self.n_embed * 3), device=octree.device)
         past = None

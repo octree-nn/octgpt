@@ -125,7 +125,7 @@ class GPT(nn.Module):
         vq_indices = torch.empty((0, ), device=octree.device).long()
 
         past = torch.empty(
-            (self.n_layer, 0, self.n_embed * 3), device=octree.device)
+            (self.num_blocks, 0, self.num_embed * 3), device=octree.device)
         # past = None
         total_nnum = 0
         for d in range(depth_low, depth_high + 1):
