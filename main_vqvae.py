@@ -73,10 +73,25 @@ class VAESolver(Solver):
   def eval_step(self, batch):
     # forward the model
     octree_in = batch['octree_in'].cuda()
-    octree_out = OctreeD(octree_in)
+    octree_out = self._init_octree_out(octree_in)
     output = self.model.forward(octree_in, octree_out, update_octree=True)
 
     # extract the mesh
+    flags = self.FLAGS.DATA.test
+    filename = self._extract_filename(batch)
+    bbmin, bbmax = self._get_bbox(batch)
+    utils.create_mesh(
+        output['neural_mpu'], filename, size=flags.resolution,
+        bbmin=bbmin, bbmax=bbmax, mesh_scale=flags.point_scale,
+        save_sdf=flags.save_sdf)
+
+    # save the input point cloud
+    filename = filename[:-4] + '.input.ply'
+    points = batch['points_in'][0]
+    points.points *= flags.point_scale
+    utils.points2ply(filename, batch['points_in'][0])
+
+  def _extract_filename(self, batch):
     filename = batch['filename'][0]
     pos = filename.rfind('.')
     if pos != -1:
@@ -85,22 +100,12 @@ class VAESolver(Solver):
     folder = os.path.dirname(filename)
     if not os.path.exists(folder):
       os.makedirs(folder)
-    bbmin, bbmax = self._get_bbox(batch)
-    utils.create_mesh(
-        output['neural_mpu'], filename, size=self.FLAGS.SOLVER.resolution,
-        bbmin=bbmin, bbmax=bbmax, mesh_scale=self.FLAGS.DATA.test.point_scale,
-        save_sdf=self.FLAGS.SOLVER.save_sdf)
+    return filename
 
-    # save the input point cloud
-    filename = filename[:-4] + '.input.ply'
-    points = batch['points_in'][0]
-    points[:, :3] *= self.FLAGS.DATA.test.point_scale
-    utils.points2ply(filename, batch['points_in'][0])
-
-  def _init_octree_out(self, octree_in, depth_out):
+  def _init_octree_out(self, octree_in):
     full_depth = octree_in.full_depth  # grow octree to full_depth
     octree_out = ocnn.octree.init_octree(
-        depth_out, full_depth, octree_in.batch_size, octree_in.device)
+        full_depth, full_depth, octree_in.batch_size, octree_in.device)
     return OctreeD(octree_out, full_depth)
 
   def _get_bbox(self, batch):
@@ -108,7 +113,7 @@ class VAESolver(Solver):
       bbox = batch['bbox'][0].numpy()
       bbmin, bbmax = bbox[:3], bbox[3:]
     else:
-      sdf_scale = self.FLAGS.SOLVER.sdf_scale
+      sdf_scale = self.FLAGS.DATA.test.sdf_scale
       bbmin, bbmax = -sdf_scale, sdf_scale
     return bbmin, bbmax
 
