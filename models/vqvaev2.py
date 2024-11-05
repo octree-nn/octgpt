@@ -14,8 +14,8 @@ class Encoder(torch.nn.Module):
   '''
 
   def __init__(self, in_channels: int,
-               channels: List[int] = [32, 64],
-               resblk_nums: List[int] = [1, 1], **kwargs):
+               channels: List[int] = [32, 32, 64],
+               resblk_nums: List[int] = [1, 1, 1], **kwargs):
     super().__init__()
     groups = 32
     self.stage_num = len(channels)

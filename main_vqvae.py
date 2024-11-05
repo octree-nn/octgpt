@@ -94,12 +94,10 @@ class VAESolver(Solver):
   def _extract_filename(self, batch):
     filename = batch['filename'][0]
     pos = filename.rfind('.')
-    if pos != -1:
-      filename = filename[:pos]  # remove the suffix
+    if pos != -1: filename = filename[:pos]  # remove the suffix
     filename = os.path.join(self.logdir, filename + '.obj')
     folder = os.path.dirname(filename)
-    if not os.path.exists(folder):
-      os.makedirs(folder)
+    if not os.path.exists(folder): os.makedirs(folder)
     return filename
 
   def _init_octree_out(self, octree_in):
