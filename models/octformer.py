@@ -7,6 +7,7 @@
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import ocnn
 import dwconv
 
@@ -267,17 +268,21 @@ class OctreeAttention(torch.nn.Module):
     def __init__(self, dim: int, patch_size: int, num_heads: int,
                  qkv_bias: bool = True, qk_scale: Optional[float] = None,
                  attn_drop: float = 0.0, proj_drop: float = 0.0,
-                 dilation: int = 1, use_rpe: bool = False):
+                 dilation: int = 1, use_rpe: bool = False, use_flash: bool = True):
         super().__init__()
         self.dim = dim
         self.patch_size = patch_size
         self.num_heads = num_heads
         self.dilation = dilation
         self.use_rpe = use_rpe
+        self.use_flash = use_flash
         self.scale = qk_scale or (dim // num_heads) ** -0.5
 
         self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = torch.nn.Dropout(attn_drop)
+        if self.use_flash:
+            self.attn_drop = attn_drop
+        else:
+            self.attn_drop = torch.nn.Dropout(attn_drop)
         self.proj = torch.nn.Linear(dim, dim)
         self.proj_drop = torch.nn.Dropout(proj_drop)
         self.softmax = torch.nn.Softmax(dim=-1)
@@ -296,7 +301,7 @@ class OctreeAttention(torch.nn.Module):
         D = self.dilation
 
         if D > 1:
-            rel_pos = octree.dilate_pos
+            # rel_pos = octree.dilate_pos
             mask = octree.dilate_mask
             if octree.dilate_tf_mask is not None:
                 mask += octree.dilate_tf_mask
@@ -305,7 +310,7 @@ class OctreeAttention(torch.nn.Module):
                     torch.ones(K, K, device=data.device)).unsqueeze(0)
                 mask = mask.masked_fill(tf_mask == 0, -1e3)
         else:
-            rel_pos = octree.rel_pos
+            # rel_pos = octree.rel_pos
             mask = octree.patch_mask
             if octree.patch_tf_mask is not None:
                 mask += octree.patch_tf_mask
@@ -313,6 +318,7 @@ class OctreeAttention(torch.nn.Module):
                 tf_mask = torch.tril(
                     torch.ones(K, K, device=data.device)).unsqueeze(0)
                 mask = mask.masked_fill(tf_mask == 0, -1e3)
+        mask = mask.float()
 
         def patchify_qkv(qkv: torch.Tensor):
             # patch partition
@@ -356,15 +362,19 @@ class OctreeAttention(torch.nn.Module):
             Q = K
             q, k, v = patchify_qkv(qkv)
             present = None
-        q = q * self.scale
 
-        # attn
-        attn = q @ k.transpose(-2, -1)                # (N, H, K, K)
-        attn = self.apply_rpe(attn, rel_pos)    # (N, H, K, K)
-        attn = attn + mask.unsqueeze(1)
-        attn = self.softmax(attn)
-        attn = self.attn_drop(attn)
-        data = (attn @ v).transpose(1, 2).reshape(-1, C)
+        if self.use_flash:
+            data = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=mask.unsqueeze(1), dropout_p=self.attn_drop if self.training else 0.0, scale=self.scale)
+            data = data.transpose(1, 2).reshape(-1, C)
+        else:
+            # attn
+            attn = q @ k.transpose(-2, -1) * self.scale  # (N, H, K, K)
+            # attn = self.apply_rpe(attn, rel_pos)    # (N, H, K, K)
+            attn = attn + mask.unsqueeze(1)
+            attn = self.softmax(attn)
+            attn = self.attn_drop(attn)
+            data = (attn @ v).transpose(1, 2).reshape(-1, C)
 
         # patch reverse
         if D > 1:    # dilation
