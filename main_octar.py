@@ -10,7 +10,7 @@ from utils.distributed import get_rank
 from models.vqvae import VQVAE
 from models.gpt import GPT
 from models.mar import MAR
-from datasets import get_shapenet_vae_dataset
+from datasets import get_shapenet_dataset
 from tqdm import tqdm
 os.environ['TORCH_NCCL_BLOCKING_WAIT'] = '1'
 
@@ -31,7 +31,7 @@ class OctarSolver(Solver):
             model = MAR(**flags.GPT)
         else:
             raise NotImplementedError("Model not implemented")
-        
+
         vqvae = VQVAE(**flags.VQVAE)
         model.cuda(device=self.device)
         vqvae.cuda(device=self.device)
@@ -45,11 +45,11 @@ class OctarSolver(Solver):
         print("Load VQVAE from", flags.vqvae_ckpt)
         self.vqvae_module = vqvae
         return model
-    
+
     def config_model(self):
         flags = self.FLAGS.MODEL
         model = self.get_model()
-        
+
         if self.world_size > 1:
             if flags.sync_bn:
                 model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -66,7 +66,7 @@ class OctarSolver(Solver):
         #     print(model)
 
     def get_dataset(self, flags):
-        return get_shapenet_vae_dataset(flags)
+        return get_shapenet_dataset(flags)
 
     def batch_to_cuda(self, batch):
         keys = ['octree', 'octree_in', 'octree_gt', 'pos', 'sdf',
@@ -104,7 +104,7 @@ class OctarSolver(Solver):
             output = self.model_forward(batch)
         output = {'test/' + key: val for key, val in output.items()}
         return output
-    
+
     def test_epoch(self, epoch):
         # super().test_epoch(epoch)
         # generate the mesh

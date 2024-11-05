@@ -8,7 +8,7 @@ from ognn.octreed import OctreeD
 from utils import utils
 # from models.vqvae import VQVAE
 from models.vqvaev2 import VQVAE
-from datasets import get_shapenet_vae_dataset
+from datasets import get_shapenet_dataset
 
 
 class VAESolver(Solver):
@@ -17,7 +17,7 @@ class VAESolver(Solver):
     return VQVAE(**flags)
 
   def get_dataset(self, flags):
-    return get_shapenet_vae_dataset(flags)
+    return get_shapenet_dataset(flags)
 
   def batch_to_cuda(self, batch):
     keys = ['octree', 'octree_in', 'octree_gt', 'pos', 'sdf',

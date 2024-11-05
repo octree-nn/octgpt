@@ -1,5 +1,5 @@
-from .shapenet_vae import get_shapenet_vae_dataset
+from .shapenet import get_shapenet_dataset
 
 __all__ = [
-    'get_shapenet_vae_dataset'
+    'get_shapenet_dataset'
 ]
