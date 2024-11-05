@@ -89,7 +89,7 @@ class VAESolver(Solver):
     filename = filename[:-4] + '.input.ply'
     points = batch['points_in'][0]
     points.points *= flags.point_scale
-    utils.points2ply(filename, batch['points_in'][0])
+    utils.points2ply(filename, points)
 
   def _extract_filename(self, batch):
     filename = batch['filename'][0]

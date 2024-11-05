@@ -196,15 +196,12 @@ def calc_chamfer(filename_gt, filename_pred, point_num):
 
 
 def points2ply(filename: str, points: Points):
-  xyz = points.points.numpy()
-  normal = points.normals.numpy()
-  has_normal = normal is not None
-
   # data types
-  data = xyz
+  data = points.points.numpy()
   py_types = (float, float, float)
   npy_types = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
-  if has_normal:
+  if points.normals is not None:
+    normal = points.normals.numpy()
     py_types = py_types + (float, float, float)
     npy_types = npy_types + [('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4')]
     data = np.concatenate((data, normal), axis=1)
