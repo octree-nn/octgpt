@@ -9,12 +9,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import ocnn
-import dwconv
-
 from ocnn.octree import Octree
 from typing import Optional, List
 from torch.utils.checkpoint import checkpoint
-
 
 class OctreeT(Octree):
 
@@ -147,21 +144,6 @@ class MLP(torch.nn.Module):
     return data
 
 
-class OctreeDWConvBn(torch.nn.Module):
-
-  def __init__(self, in_channels: int, kernel_size: List[int] = [3],
-               stride: int = 1, nempty: bool = False):
-    super().__init__()
-    self.conv = dwconv.OctreeDWConv(
-        in_channels, kernel_size, nempty, use_bias=False)
-    self.bn = torch.nn.BatchNorm1d(in_channels)
-
-  def forward(self, data: torch.Tensor, octree: Octree, depth: int):
-    out = self.conv(data, octree, depth)
-    out = self.bn(out)
-    return out
-
-
 class RPE(torch.nn.Module):
 
   def __init__(self, patch_size: int, num_heads: int, dilation: int = 1):
@@ -200,12 +182,12 @@ class SinPosEmb(torch.nn.Module):
   def __init__(self, num_embed, full_depth=3, max_depth=6):
     super().__init__()
     self.num_embed = num_embed
-    self.max_depth = max_depth + 1
+    self.max_depth = max_depth
     self.full_depth = full_depth
-    self.max_scale = 2 ** (self.max_depth)
+    self.max_scale = 2 ** (self.max_depth + 1)
 
     self.depth_emb = torch.nn.Embedding(
-        self.max_depth - self.full_depth, num_embed)
+        self.max_depth - self.full_depth + 1, num_embed)
 
   def rescale_pos(self, x, scale):
     x = x * self.max_scale // scale
@@ -245,7 +227,7 @@ class SinPosEmb(torch.nn.Module):
 
     return emb[:, :self.num_embed]
 
-  def forward(self, octree, depth_low, depth_high):
+  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int):
     position_embeddings = []
     for d in range(depth_low, depth_high + 1):
       scale = 2 ** d
@@ -263,17 +245,32 @@ class SinPosEmb(torch.nn.Module):
 
 
 class OctreeConvPosEmb(torch.nn.Module):
-  def __init__(self, in_channels: int, num_depth: int = 3, groups: int = 32, kernel_size: List[int] = [3],
-               stride: int = 1, nempty: bool = False):
+  def __init__(self, num_embed: int, full_depth: int = 3, max_depth: int = 6, groups: int = 32, nempty: bool = False):
     super().__init__()
-    self.conv = torch.nn.ModuleList([ocnn.modules.OctreeConvGnRelu(in_channels=in_channels, out_channels=in_channels,
-                                    group=groups, kernel_size=kernel_size, stride=stride, nempty=nempty)] for i in range(num_depth))
+    self.full_depth = full_depth
+    self.max_depth = max_depth
+    self.conv = torch.nn.ModuleList([
+      ocnn.modules.OctreeConvGnRelu(in_channels=num_embed, out_channels=num_embed, group=groups, nempty=nempty) 
+         for i in range(max_depth - full_depth + 1)])
+    self.depth_emb = torch.nn.Embedding(
+        self.max_depth - self.full_depth + 1, num_embed)
 
-  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high):
+  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int):
+    position_embeddings = []
+    cur_seq_len = 0
     for d in range(depth_low, depth_high + 1):
-      data = self.conv(data, octree, d)
-    out = self.conv(data, octree)
-    return out
+      nnum_d = octree.nnum[d]
+      # clone the data to avoid in-place operation
+      data_d = data[cur_seq_len:cur_seq_len + nnum_d].clone()
+      pos_emb_d = self.conv[d - depth_low](data_d, octree, d)
+      depth_emb_d = self.depth_emb(torch.tensor(
+          [d - self.full_depth], device=octree.device))
+      position_embeddings.append(pos_emb_d + depth_emb_d)
+      cur_seq_len += nnum_d
+      if cur_seq_len >= data.shape[0]:
+        break
+    position_embeddings = torch.cat(position_embeddings, dim=0)
+    return position_embeddings
 
 
 class OctreeAttention(torch.nn.Module):
@@ -337,8 +334,7 @@ class OctreeAttention(torch.nn.Module):
       # patch partition
       qkv = octree.patch_partition(qkv)
       if D > 1:    # dilation
-        qkv = qkv.view(-1, K, D, C * 3).transpose(1,
-                                                  2).reshape(-1, C * 3)
+        qkv = qkv.view(-1, K, D, C * 3).transpose(1, 2).reshape(-1, C * 3)
       qkv = qkv.view(-1, K, C * 3)
       qkv = qkv.reshape(-1, K, 3, H, C // H).permute(2, 0, 3, 1, 4)
       q, k, v = qkv[0], qkv[1], qkv[2]
@@ -378,7 +374,9 @@ class OctreeAttention(torch.nn.Module):
 
     if self.use_flash:
       data = F.scaled_dot_product_attention(
-          q, k, v, attn_mask=mask.unsqueeze(1), dropout_p=self.attn_drop if self.training else 0.0, scale=self.scale)
+          q, k, v, attn_mask=mask.unsqueeze(1),
+          dropout_p=self.attn_drop if self.training else 0.0,
+          scale=self.scale)
       data = data.transpose(1, 2).reshape(-1, C)
     else:
       # attn
@@ -424,7 +422,9 @@ class OctFormerBlock(torch.nn.Module):
                dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
                qk_scale: Optional[float] = None, attn_drop: float = 0.0,
                proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
-               activation: torch.nn.Module = torch.nn.GELU, **kwargs):
+               pos_emb: torch.nn.Module = SinPosEmb,
+               activation: torch.nn.Module = torch.nn.GELU,
+               **kwargs):
     super().__init__()
     self.norm1 = torch.nn.LayerNorm(dim)
     self.attention = OctreeAttention(dim, patch_size, num_heads, qkv_bias,
@@ -433,15 +433,15 @@ class OctFormerBlock(torch.nn.Module):
     self.mlp = MLP(dim, int(dim * mlp_ratio), dim, activation, proj_drop)
     # self.drop_path = ocnn.nn.OctreeDropPath(drop_path, nempty)
     self.dropout = torch.nn.Dropout(drop_path)
-    self.pe = SinPosEmb(dim)
+    self.pos_emb = pos_emb(dim)
 
   def forward(self, data: torch.Tensor, octree: OctreeT, depth_low: int, depth_high: int, layer_past=None):
-    if layer_past is not None:
-      pe = self.pe(octree, depth_low, depth_high)[
-          layer_past.shape[0]:octree.nnum_t]
-    else:
-      pe = self.pe(octree, depth_low, depth_high)[:octree.nnum_t]
-    data = pe + data
+    # if layer_past is not None:
+    #   pe = self.pos_emb(data, octree, depth_low, depth_high)[
+    #       layer_past.shape[0]:octree.nnum_t]
+    # else:
+    #   pe = self.pos_emb(data, octree, depth_low, depth_high)[:octree.nnum_t]
+    # data = pe + data
     attn, layer_present = self.attention(
         self.norm1(data), octree, layer_past)
     data = data + self.dropout(attn)
@@ -457,6 +457,7 @@ class OctFormerStage(torch.nn.Module):
                qk_scale: Optional[float] = None, attn_drop: float = 0.0,
                proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
                activation: torch.nn.Module = torch.nn.GELU, interval: int = 6,
+               pos_emb: torch.nn.Module = SinPosEmb,
                use_checkpoint: bool = True, num_blocks: int = 2,
                octformer_block=OctFormerBlock, **kwargs):
     super().__init__()
@@ -472,6 +473,7 @@ class OctFormerStage(torch.nn.Module):
         attn_drop=attn_drop, proj_drop=proj_drop,
         drop_path=drop_path[i] if isinstance(
             drop_path, list) else drop_path,
+
         nempty=nempty, activation=activation) for i in range(num_blocks)])
     # self.norms = torch.nn.ModuleList([
     #         torch.nn.BatchNorm1d(dim) for _ in range(self.num_norms)])
@@ -500,6 +502,7 @@ class OctFormer(torch.nn.Module):
                num_heads: int = 16,
                patch_size: int = 26, dilation: int = 4,
                drop_path: float = 0.5, attn_drop: float = 0.1, proj_drop: float = 0.1,
+               pos_emb: torch.nn.Module = SinPosEmb,
                nempty: bool = False, use_checkpoint: bool = True,
                **kwargs):
     super().__init__()
@@ -513,6 +516,7 @@ class OctFormer(torch.nn.Module):
         # drop_path=torch.linspace(0, drop_path, num_blocks).tolist(),
         dilation=dilation, nempty=nempty, num_blocks=num_blocks,
         attn_drop=attn_drop, proj_drop=proj_drop,
+        pos_emb=pos_emb,
         use_checkpoint=use_checkpoint)
 
   def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int, past=None, group_idx=None):

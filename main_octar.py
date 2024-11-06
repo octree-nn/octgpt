@@ -152,8 +152,10 @@ class OctarSolver(Solver):
 
       # extract the mesh
       utils.create_mesh(
-          output['neural_mpu'], os.path.join(self.logdir, f"results/{index}.obj"), size=self.FLAGS.SOLVER.resolution,
-          bbmin=-self.FLAGS.SOLVER.sdf_scale, bbmax=self.FLAGS.SOLVER.sdf_scale, mesh_scale=self.FLAGS.DATA.test.point_scale,
+          output['neural_mpu'], os.path.join(self.logdir, f"results/{index}.obj"), 
+          size=self.FLAGS.SOLVER.resolution,
+          bbmin=-self.FLAGS.SOLVER.sdf_scale, bbmax=self.FLAGS.SOLVER.sdf_scale, 
+          mesh_scale=self.FLAGS.DATA.test.point_scale,
           save_sdf=self.FLAGS.SOLVER.save_sdf)
 
   def _init_octree_out(self, octree_in, depth_out):

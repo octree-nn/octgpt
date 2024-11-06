@@ -103,6 +103,7 @@ MODEL:
     patch_size: 4096
     dilation: 2
     drop_rate: 0.1
+    pos_emb_type: SinPosEmb
     use_checkpoint: True
     mask_ratio_min: 0.7
     num_pred_tokens: 2

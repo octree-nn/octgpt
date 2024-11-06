@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
-from models.octformer import OctFormer, SinPosEmb
+from models.octformer import OctFormer, SinPosEmb, OctreeConvPosEmb
 from utils.utils import seq2octree, sample
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class MAR(nn.Module):
                patch_size=4096,
                dilation=2,
                drop_rate=0.1,
+               pos_emb_type="SinPosEmb",
                use_checkpoint=True,
                mask_ratio_min=0.7,
                start_temperature=1.0,
@@ -38,14 +39,17 @@ class MAR(nn.Module):
     self.start_temperature = start_temperature
     self.num_iters = num_iters
 
-    self.pos_emb = SinPosEmb(num_embed)
+    self.pos_emb = eval(pos_emb_type)(num_embed)
 
     self.split_emb = nn.Embedding(split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
 
     self.drop = nn.Dropout(drop_rate)
-    self.blocks = OctFormer(channels=num_embed, num_blocks=num_blocks, num_heads=num_head,
-                            patch_size=patch_size, dilation=dilation, attn_drop=drop_rate, proj_drop=drop_rate, nempty=False, use_checkpoint=use_checkpoint)
+    self.blocks = OctFormer(
+        channels=num_embed, num_blocks=num_blocks, num_heads=num_head,
+        patch_size=patch_size, dilation=dilation, attn_drop=drop_rate,
+        proj_drop=drop_rate, pos_emb=eval(pos_emb_type), nempty=False,
+        use_checkpoint=use_checkpoint)
 
     self.ln_x = nn.LayerNorm(num_embed)
     self.split_head = nn.Linear(num_embed, split_size)
@@ -80,7 +84,8 @@ class MAR(nn.Module):
     return mask
 
   def get_depth_index(self, octree, depth_low, depth_high):
-    return torch.cat([torch.ones(octree.nnum[d], device=octree.device).long() * d for d in range(depth_low, depth_high + 1)])
+    return torch.cat([torch.ones(octree.nnum[d], device=octree.device).long() * d
+                      for d in range(depth_low, depth_high + 1)])
 
   def forward(self, split, octree_in, depth_low, depth_high, category=None, vqvae=None):
     targets = copy.deepcopy(split)
@@ -90,10 +95,6 @@ class MAR(nn.Module):
     if category == None:
       category = torch.zeros(batch_size).long().to(split.device)
     cond = self.class_emb(category)  # 1 x C
-
-    # positional embedding
-    position_embeddings = self.pos_emb(
-        octree_in, depth_low, depth_high)  # S x C
 
     x_token_embeddings = self.split_emb(split)  # S x C
 
@@ -105,11 +106,15 @@ class MAR(nn.Module):
       x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
       targets = torch.cat([targets, indices], dim=0)
 
+    # positional embedding
+    position_embeddings = self.pos_emb(
+        x_token_embeddings, octree_in, depth_low, depth_high)  # S x C
+
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
     mask = self.random_masking(seq_len, orders)
     x_token_embeddings[mask.bool()] = cond
-    x = x_token_embeddings + position_embeddings[:seq_len]
+    x = x_token_embeddings  + position_embeddings[:seq_len]
 
     # get depth index
     depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
