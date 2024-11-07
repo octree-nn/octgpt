@@ -436,12 +436,12 @@ class OctFormerBlock(torch.nn.Module):
     self.pos_emb = pos_emb(dim)
 
   def forward(self, data: torch.Tensor, octree: OctreeT, depth_low: int, depth_high: int, layer_past=None):
-    # if layer_past is not None:
-    #   pe = self.pos_emb(data, octree, depth_low, depth_high)[
-    #       layer_past.shape[0]:octree.nnum_t]
-    # else:
-    #   pe = self.pos_emb(data, octree, depth_low, depth_high)[:octree.nnum_t]
-    # data = pe + data
+    if layer_past is not None:
+      pe = self.pos_emb(data, octree, depth_low, depth_high)[
+          layer_past.shape[0]:octree.nnum_t]
+    else:
+      pe = self.pos_emb(data, octree, depth_low, depth_high)[:octree.nnum_t]
+    data = pe + data
     attn, layer_present = self.attention(
         self.norm1(data), octree, layer_past)
     data = data + self.dropout(attn)

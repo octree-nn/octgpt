@@ -82,7 +82,7 @@ MODEL:
   vqvae_ckpt: saved_ckpt/vqvae_model.pth
   enable_vqvae: False
   find_unused_parameters: True
-  model_name: GPT
+  model_name: MAR
 
   VQVAE:
     name: vae
@@ -106,8 +106,8 @@ MODEL:
     pos_emb_type: SinPosEmb
     use_checkpoint: True
     mask_ratio_min: 0.7
-    num_pred_tokens: 2
-    
+    start_temperature: 1.0
+    num_iters: 256 
   
 
 LOSS:

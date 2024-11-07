@@ -31,7 +31,7 @@ class MAR(nn.Module):
                use_checkpoint=True,
                mask_ratio_min=0.7,
                start_temperature=1.0,
-               num_iters=64,
+               num_iters=256,
                **kwargs):
     super(MAR, self).__init__()
     self.num_embed = num_embed
@@ -157,8 +157,6 @@ class MAR(nn.Module):
       if d == depth_high and vqvae == None:
         break
 
-      position_embeddings = self.pos_emb(
-          octree, octree.full_depth, d)  # S x C
       # get depth index
       depth_idx = self.get_depth_index(octree, depth_low, d)
       nnum_d = octree.nnum[d]
@@ -171,6 +169,7 @@ class MAR(nn.Module):
 
       for i in tqdm(range(self.num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
+        position_embeddings = self.pos_emb(x, octree, octree.full_depth, d)  # S x C
         x = x + position_embeddings[:x.shape[0], :]
         x, _ = self.blocks(x, octree, depth_low, d,
                            group_idx=depth_idx)  # B x S x C
