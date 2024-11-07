@@ -2,7 +2,7 @@ SOLVER:
   gpu: 0,
   run: train
 
-  logdir: logs/shapenet_vae/vae
+  logdir: logs/shapenet_vae/vqvae
   max_epoch: 300
   test_every_epoch: 20
   log_per_iter: 20
@@ -21,7 +21,7 @@ SOLVER:
 
 DATA:
   train:
-    name: &name shapenet_vae
+    name: &name shapenet
 
     # octree building
     depth: &depth 8
@@ -33,16 +33,14 @@ DATA:
     surface_sample_num: &surface_sample_num 10000
 
     # data augmentation
-    distort: True
+    distort: False
 
     # data loading
-    # location: &location data/ShapeNet/dataset_10w
-    # filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
-    location: &location data/ShapeNet-vae
-    filelist: data/ShapeNet-vae/filelist/train_airplane.txt
+    location: &location data/ShapeNet/dataset_10w
+    filelist: data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: True
     load_sdf: True
-    batch_size: 2
+    batch_size: 8
     shuffle: True
 
   test:
@@ -58,22 +56,16 @@ DATA:
     surface_sample_num: *surface_sample_num
 
     # data augmentation
-    distort: True
+    distort: False
 
     # data loading
     location: *location
-    # filelist: *filelist
-    filelist: data/ShapeNet-vae/filelist/val_airplane.txt
-    batch_size: 1
+    filelist: data/ShapeNet/filelist/test_airplane.txt
+    batch_size: 2
     load_pointcloud: True
     load_sdf: True
     shuffle: False
 
-    # for extracting meshes
-    resolution: 300       # the resolution used for marching cubes
-    save_sdf: False       # save the sdfs in evaluation
-    with_color: False     # extract colored mesh
-    sdf_scale: 0.9        # the scale of sdfs
 
 MODEL:
   name: vae

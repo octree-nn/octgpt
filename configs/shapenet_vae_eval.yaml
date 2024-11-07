@@ -1,13 +1,13 @@
 SOLVER:
   gpu: 0,
   run: evaluate
-  logdir: logs/shapenet_vae_eval/vae
-  ckpt: logs/shapenet_vae/vae_10251120/best_model.pth
+  logdir: logs/shapenet_vae_eval/vqvae
+  ckpt: logs/shapenet_vae/vqvae_airplane_b8/best_model.pth
 
 
 DATA:
   test:
-    name: shapenet_vae
+    name: shapenet
 
     # octree building
     depth: 8
@@ -19,11 +19,11 @@ DATA:
     surface_sample_num: 10000
 
     # data augmentation
-    distort: True
+    distort: False
 
     # data loading
-    location: data/ShapeNet-vae
-    filelist: data/ShapeNet-vae/filelist/val_airplane.txt
+    location: data/ShapeNet/dataset_10w
+    filelist: data/ShapeNet/filelist/test_airplane.txt
     batch_size: 1
     load_pointcloud: True
     load_sdf: False
@@ -33,7 +33,6 @@ DATA:
     # for extracting meshes
     resolution: 300       # the resolution used for marching cubes
     save_sdf: False       # save the sdfs in evaluation
-    with_color: False     # extract colored mesh
     sdf_scale: 0.9        # the scale of sdfs
 
 MODEL:
@@ -44,5 +43,3 @@ MODEL:
   embedding_sizes: 128
   embedding_channels: 256
   feature: ND
-
-  depth_out: 8
