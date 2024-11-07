@@ -106,15 +106,14 @@ class MAR(nn.Module):
       x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
       targets = torch.cat([targets, indices], dim=0)
 
-    # positional embedding
-    position_embeddings = self.pos_emb(
-        x_token_embeddings, octree_in, depth_low, depth_high)  # S x C
-
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
     mask = self.random_masking(seq_len, orders)
     x_token_embeddings[mask.bool()] = cond
-    x = x_token_embeddings  + position_embeddings[:seq_len]
+    # positional embedding
+    position_embeddings = self.pos_emb(
+        x_token_embeddings, octree_in, depth_low, depth_high)  # S x C
+    x = x_token_embeddings + position_embeddings[:seq_len]
 
     # get depth index
     depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
@@ -169,7 +168,8 @@ class MAR(nn.Module):
 
       for i in tqdm(range(self.num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
-        position_embeddings = self.pos_emb(x, octree, octree.full_depth, d)  # S x C
+        position_embeddings = self.pos_emb(
+            x, octree, octree.full_depth, d)  # S x C
         x = x + position_embeddings[:x.shape[0], :]
         x, _ = self.blocks(x, octree, depth_low, d,
                            group_idx=depth_idx)  # B x S x C
