@@ -40,7 +40,7 @@ DATA:
     filelist: data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: True
     load_sdf: True
-    batch_size: 8
+    batch_size: 2
     shuffle: True
 
   test:
@@ -61,7 +61,7 @@ DATA:
     # data loading
     location: *location
     filelist: data/ShapeNet/filelist/test_airplane.txt
-    batch_size: 2
+    batch_size: 1
     load_pointcloud: True
     load_sdf: True
     shuffle: False

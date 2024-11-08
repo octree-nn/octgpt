@@ -53,6 +53,7 @@ class Decoder(torch.nn.Module):
                decoder_channels: List[int] = [256, 128, 64, 32, 32, 32],
                decoder_blk_nums: List[int] = [2, 4, 2, 1, 1, 1],
                mpu_stage_nums: int = 2,
+               pred_stage_nums: int = 2,
                **kwargs):
     super().__init__()
     self.bottleneck = 2
@@ -96,9 +97,10 @@ class Decoder(torch.nn.Module):
         self.resblk_type) for i in range(self.decoder_stages)])
 
     # header
+    self.start_pred = self.decoder_stages - pred_stage_nums
     self.predict = torch.nn.ModuleList([ognn.nn.Prediction(
         self.decoder_channels[i], self.head_channel, 2, self.norm_type,
-        self.act_type) for i in range(self.decoder_stages)])
+        self.act_type) for i in range(self.start_pred, self.decoder_stages)])
     self.start_mpu = self.decoder_stages - mpu_stage_nums
     self.regress = torch.nn.ModuleList([ognn.nn.Prediction(
         self.decoder_channels[i], self.head_channel, 4, self.norm_type,
@@ -129,14 +131,19 @@ class Decoder(torch.nn.Module):
       if i > 0:
         deconv = self.upsample[i-1](deconv, octree_out, d-1)
         if d in convs:
-          skip = self._octree_align(convs[d], octree_in, octree_out, d)
-          deconv = deconv + skip  # output-guided skip connections
+          if i >= self.start_pred:
+            skip = self._octree_align(convs[d], octree_in, octree_out, d)
+          else:
+            skip = convs[d]
+          deconv = deconv + skip  # skip connections
       deconv = self.decoder[i](deconv, octree_out, d)
 
       # predict the splitting label and signal
-      logit = self.predict[i](deconv, octree_out, d)
-      nnum = octree_out.nnum[d]
-      logits[d] = logit[-nnum:]
+      if i >= self.start_pred:
+        j = i - self.start_pred
+        logit = self.predict[j](deconv, octree_out, d)
+        nnum = octree_out.nnum[d]
+        logits[d] = logit[-nnum:]
 
       # regress signals and pad zeros to non-leaf nodes
       if i >= self.start_mpu:
@@ -145,7 +152,7 @@ class Decoder(torch.nn.Module):
         signals[d] = self.graph_pad(signal, octree_out, d)
 
       # update the octree according to predicted labels
-      if update_octree:
+      if update_octree and i >= self.start_pred:
         split = logits[d].argmax(1).int()
         octree_out.octree_split(split, d)
         if i < self.decoder_stages - 1:
@@ -161,7 +168,6 @@ class Decoder(torch.nn.Module):
     depth = depth - self.encoder_stages + 1
     output = self.octree_decoder(convs, octree_in, octree_out,
                                  depth, update_octree)
-
     # setup mpu
     depth_out = octree_out.depth
     neural_mpu = mpu.NeuralMPU(output['signals'], octree_out, depth_out)
@@ -171,7 +177,7 @@ class Decoder(torch.nn.Module):
       output['mpus'] = neural_mpu(pos)
 
     # create the mpu wrapper
-    output['neural_mpu'] = lambda pos: neural_mpu(pos)[depth_out]
+    output['neural_mpu'] = lambda p: neural_mpu(p)[depth_out]
     return output
 
 
@@ -238,17 +244,6 @@ class VQVAE(torch.nn.Module):
     # run the decoder defined on dual octrees
     output = self.decoder(data, code_depth, octree_in, octree_out,
                           pos, update_octree)
-
-    # setup mpu
-    depth_out = octree_out.depth
-    neural_mpu = mpu.NeuralMPU(output['signals'], octree_out, depth_out)
-
-    # compute function value with mpu
-    if pos is not None:
-      output['mpus'] = neural_mpu(pos)
-
-    # create the mpu wrapper
-    output['neural_mpu'] = lambda pos: neural_mpu(pos)[depth_out]
     return output
 
 
