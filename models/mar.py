@@ -142,13 +142,14 @@ class MAR(nn.Module):
     return output
 
   @torch.no_grad()
-  def generate(self, octree, depth_low, depth_high, category=None, vqvae=None):
+  def generate(self, octree, depth_low, depth_high, token_embeddings=None, category=None, vqvae=None):
     if category == None:
       category = torch.zeros(1).long().to(octree.device)
     cond = self.class_emb(category)  # 1 x C
 
-    token_embeddings = torch.empty(
-        (0, self.num_embed), device=octree.device)
+    if token_embeddings is None:
+      token_embeddings = torch.empty(
+          (0, self.num_embed), device=octree.device)
 
     vq_indices = None
     # past = torch.empty(
@@ -160,7 +161,7 @@ class MAR(nn.Module):
         break
 
       # get depth index
-      depth_idx = self.get_depth_index(octree, depth_low, d)
+      depth_idx = self.get_depth_index(octree, octree.full_depth, d)
       nnum_d = octree.nnum[d]
 
       mask = torch.ones(nnum_d, device=octree.device).long()
@@ -174,7 +175,7 @@ class MAR(nn.Module):
         position_embeddings = self.pos_emb(
             x, octree, octree.full_depth, d)  # S x C
         x = x + position_embeddings[:x.shape[0], :]
-        x, _ = self.blocks(x, octree, depth_low, d,
+        x, _ = self.blocks(x, octree, octree.full_depth, d,
                            group_idx=depth_idx)  # B x S x C
         x = x[-nnum_d:, :]
         x = self.ln_x(x)

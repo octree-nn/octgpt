@@ -118,32 +118,25 @@ class OctarSolver(Solver):
     # generate the mesh
     if epoch % self.FLAGS.SOLVER.generate_every_epoch != 0:
       return
-    self.generate_iter(epoch)
+    self.generate_step(epoch)
 
   def generate(self):
     self.manual_seed()
     self.config_model()
     self.configure_log(set_writer=False)
+    self.config_dataloader(disable_train_data=True)
     self.load_checkpoint()
     self.model.eval()
     for iter in tqdm(range(10000), ncols=80):
-      self.generate_iter(iter)
+      # self.generate_step(iter)
+      self.generate_vq_only(iter)
 
-  @torch.no_grad()
-  def generate_iter(self, index):
-    # forward the model
-    index = self.world_size * index + get_rank()
-    octree_out = ocnn.octree.init_octree(
-        self.depth, self.full_depth, 1, self.device)
-    octree_out, vq_indices = self.model_module.generate(
-        octree_out, depth_low=self.full_depth, depth_high=self.depth_stop,
-        vqvae=self.vqvae_module if self.enable_vqvae else None)
-
+  def export_results(self, octree_out, index, vq_indices=None):
     # export the octree
     for d in range(self.full_depth + 1, self.depth_stop + 1):
       utils.export_octree(octree_out, d, os.path.join(
           self.logdir, f'results/octree_depth{d}'), index=index)
-
+      
     # decode the octree
     if self.enable_vqvae:
       for d in range(self.depth_stop, self.depth):
@@ -164,7 +157,42 @@ class OctarSolver(Solver):
           bbmin=-self.FLAGS.SOLVER.sdf_scale, bbmax=self.FLAGS.SOLVER.sdf_scale, 
           mesh_scale=self.FLAGS.DATA.test.point_scale,
           save_sdf=self.FLAGS.SOLVER.save_sdf)
+  
+  @torch.no_grad()
+  def generate_step(self, index):
+    # forward the model
+    index = self.world_size * index + get_rank()
+    octree_out = ocnn.octree.init_octree(
+        self.depth, self.full_depth, 1, self.device)
+    octree_out, vq_indices = self.model_module.generate(
+        octree=octree_out, 
+        depth_low=self.full_depth, depth_high=self.depth_stop,
+        vqvae=self.vqvae_module if self.enable_vqvae else None)
+    
+    self.export_results(octree_out, index, vq_indices)
+    
+  @torch.no_grad()
+  def generate_vq_only(self, index):
+    # forward the model
+    index = self.world_size * index + get_rank()
+    batch = next(self.test_iter)
+    self.batch_to_cuda(batch)
+    octree_in = batch['octree_gt']
+    split_seq = utils.octree2seq(octree_in, self.full_depth, self.depth_stop).long()
+    
+    octree_out, vq_indices = self.model_module.generate(
+        octree=octree_in, 
+        depth_low=self.depth_stop, depth_high=self.depth_stop,
+        token_embeddings=self.model_module.split_emb(split_seq),
+        vqvae=self.vqvae_module if self.enable_vqvae else None)
 
+    gt_vq_code = self.vqvae_module.extract_code(octree_in)
+    gt_zq, gt_indices, _ = self.vqvae_module.quantizer(gt_vq_code)
+    
+    print(f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.shape} indices are different")
+    self.export_results(octree_in, index + 1, gt_indices)
+    self.export_results(octree_out, index, vq_indices)
+    
   def _init_octree_out(self, octree_in, depth_out):
     full_depth = octree_in.full_depth    # grow octree to full_depth
     octree_out = ocnn.octree.init_octree(
