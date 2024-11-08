@@ -33,6 +33,13 @@ class OctarSolver(Solver):
     else:
       raise NotImplementedError("Model not implemented")
 
+    # print model params
+    if self.is_master:
+      total_params = 0
+      for p in model.parameters():
+        total_params += p.numel()
+      print("Total number of parameters: %.3fM" % (total_params / 1e6))
+    
     vqvae = VQVAE(**flags.VQVAE)
     model.cuda(device=self.device)
     vqvae.cuda(device=self.device)
@@ -41,7 +48,7 @@ class OctarSolver(Solver):
     utils.set_requires_grad(vqvae, False)
 
     # load the pretrained vqvae
-    checkpoint = torch.load(flags.vqvae_ckpt)
+    checkpoint = torch.load(flags.vqvae_ckpt, weights_only=True)
     vqvae.load_state_dict(checkpoint)
     print("Load VQVAE from", flags.vqvae_ckpt)
     self.vqvae_module = vqvae

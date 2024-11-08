@@ -94,9 +94,10 @@ MODEL:
     feature: ND
   
   GPT:
-    num_embed: 256
-    num_head: 8
-    num_blocks: 8
+    num_embed: 512
+    num_vq_embed: 256
+    num_head: 16
+    num_blocks: 32
     num_classes: 1
     split_size: 2
     vq_size: 128
