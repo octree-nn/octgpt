@@ -264,26 +264,56 @@ class VectorQuantizer(torch.nn.Module):
     self.embedding = torch.nn.Embedding(K, D)
     self.embedding.weight.data.uniform_(-1.0 / K, 1.0 / K)
 
-  def get_embedding_indices(self, z: torch.Tensor):
-    # distances from z to embeddings e,
+  def forward(self, z: torch.Tensor):
+    # compute distances from z to embeddings e,
     # z: (N, D), e: (K, D)
     # (z - e)^2 = z^2 + e^2 - 2 e * z
     d = (torch.sum(z**2, dim=1, keepdim=True) +
          torch.sum(self.embedding.weight**2, dim=1) -
          2 * torch.matmul(z, self.embedding.weight.T))
-    out = torch.argmin(d, dim=1)
-    return out
 
-  def forward(self, z):
     # get the closest embedding indices
-    indices = self.get_embedding_indices(z)
+    indices = torch.argmin(d, dim=1)
 
     # get the embeddings
     zq = self.embedding(indices)
 
     # compute loss for the embedding
     loss = (self.beta * torch.mean((zq.detach() - z)**2) +
-            torch.mean((zq - z.detach())**2))
+                        torch.mean((zq - z.detach())**2))  # noqa
+
+    # preserve gradients: Straight-Through gradients
+    zq = z + (zq - z).detach()
+    return zq, indices, loss
+
+
+class VectorQuantizerP(torch.nn.Module):
+
+  def __init__(self, K: int, D: int, beta: float = 0.5):
+    super().__init__()
+    self.beta = beta
+    self.proj = torch.nn.Linear(D, D)
+    self.embedding = torch.nn.Embedding(K, D)
+    self.embedding.weight.data.uniform_(-1.0 / K, 1.0 / K)
+
+  def forward(self, z):
+    # compute distances from z to embeddings e,
+    # z: (N, D), e: (K, D)
+    # (z - e)^2 = z^2 + e^2 - 2 e * z
+    codebook = self.proj(self.embedding.weight)
+    d = (torch.sum(z**2, dim=1, keepdim=True) +
+         torch.sum(codebook**2, dim=1) -
+         2 * torch.matmul(z, codebook.T))
+
+    # get the closest embedding indices
+    indices = torch.argmin(d, dim=1)
+
+    # get the embeddings
+    zq = torch.nn.functional.embedding(indices, codebook)
+
+    # compute loss for the embedding
+    loss = (self.beta * torch.mean((zq.detach() - z)**2) +
+                        torch.mean((zq - z.detach())**2))  # noqa
 
     # preserve gradients: Straight-Through gradients
     zq = z + (zq - z).detach()
