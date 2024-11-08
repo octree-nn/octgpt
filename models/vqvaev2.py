@@ -52,8 +52,8 @@ class Decoder(torch.nn.Module):
                encoder_blk_nums: List[int] = [1, 2, 4, 2],
                decoder_channels: List[int] = [256, 128, 64, 32, 32, 32],
                decoder_blk_nums: List[int] = [2, 4, 2, 1, 1, 1],
-               mpu_stage_nums: int = 2,
-               pred_stage_nums: int = 2,
+               mpu_stage_nums: int = 3,
+               pred_stage_nums: int = 3,
                **kwargs):
     super().__init__()
     self.bottleneck = 2
@@ -165,15 +165,13 @@ class Decoder(torch.nn.Module):
               update_octree: bool = False):
     # run encoder and decoder
     convs = self.octree_encoder(code, octree_in, depth)
-    depth = depth - self.encoder_stages + 1
-    output = self.octree_decoder(convs, octree_in, octree_out,
-                                 depth, update_octree)
+    d = depth - self.encoder_stages + 1
+    output = self.octree_decoder(convs, octree_in, octree_out, d, update_octree)
+
     # setup mpu
     depth_out = octree_out.depth
     neural_mpu = mpu.NeuralMPU(output['signals'], octree_out, depth_out)
-
-    # compute function value with mpu
-    if pos is not None:
+    if pos is not None:  # compute function value with mpu
       output['mpus'] = neural_mpu(pos)
 
     # create the mpu wrapper
@@ -205,6 +203,7 @@ class VQVAE(torch.nn.Module):
         embedding_channels, self.dec_enc_channels[0], bias=True)
 
   def config_network(self):
+    # large network
     self.enc_channels = [32, 32, 64]
     self.enc_resblk_nums = [1, 1, 1]
 
@@ -212,6 +211,16 @@ class VQVAE(torch.nn.Module):
     self.dec_enc_resblk_nums = [1, 2, 4, 2]
     self.dec_dec_channels = [256, 128, 64, 32, 32, 32]
     self.dec_dec_resblk_nums = [2, 4, 2, 2, 1, 1]
+
+  # def config_network(self):
+  #   # small network for reference
+  #   self.enc_channels = [32, 32, 64]
+  #   self.enc_resblk_nums = [1, 1, 1]
+
+  #   self.dec_enc_channels = [64, 128, 256]
+  #   self.dec_enc_resblk_nums = [1, 1, 1]
+  #   self.dec_dec_channels = [256, 128, 64, 32, 32]
+  #   self.dec_dec_resblk_nums = [1, 1, 1, 2, 1]
 
   def forward(self, octree_in: Octree, octree_out: OctreeD,
               pos: torch.Tensor = None, update_octree: bool = False):

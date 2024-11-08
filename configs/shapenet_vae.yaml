@@ -79,5 +79,3 @@ MODEL:
 LOSS:
   name: shapenet_vae_loss
   vq_weight: 0.5
-  mpu_keys: [7, 8]
-  mpu_weights: [1.0, 1.0]
