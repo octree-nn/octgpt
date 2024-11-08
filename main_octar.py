@@ -87,16 +87,12 @@ class OctarSolver(Solver):
     self.batch_to_cuda(batch)
     octree_in = batch['octree_gt']
 
-    # For testing VQVAE
-    # vq_code = self.vqvae.extract_code(octree_in)
-    # zq, indices, _ = self.vqvae.quantizer(vq_code)
-    # output = self.vqvae.decode_code(zq, self.depth_stop, OctreeD(octree_in), update_octree=True)
-    # utils.create_mesh(output['neural_mpu'], os.path.join("mytools/0.obj"))
-
     split_seq = utils.octree2seq(
         octree_in, self.full_depth, self.depth_stop).long()
-    output = self.model(split_seq, octree_in,
-                        self.full_depth, self.depth_stop,
+    output = self.model(octree_in=octree_in,
+                        depth_low=self.depth_stop, # self.full_depth, 
+                        depth_high=self.depth_stop,
+                        split=None, # split_seq,
                         vqvae=self.vqvae_module if self.enable_vqvae else None)
     losses = [val for key, val in output.items() if 'loss' in key]
     output['loss'] = torch.sum(torch.stack(losses))
@@ -129,7 +125,7 @@ class OctarSolver(Solver):
     self.model.eval()
     for iter in tqdm(range(10000), ncols=80):
       # self.generate_step(iter)
-      self.generate_vq_only(iter)
+      self.generate_vq_step(iter)
 
   def export_results(self, octree_out, index, vq_indices=None):
     # export the octree
@@ -172,7 +168,7 @@ class OctarSolver(Solver):
     self.export_results(octree_out, index, vq_indices)
     
   @torch.no_grad()
-  def generate_vq_only(self, index):
+  def generate_vq_step(self, index):
     # forward the model
     index = self.world_size * index + get_rank()
     batch = next(self.test_iter)
@@ -183,7 +179,7 @@ class OctarSolver(Solver):
     octree_out, vq_indices = self.model_module.generate(
         octree=octree_in, 
         depth_low=self.depth_stop, depth_high=self.depth_stop,
-        token_embeddings=self.model_module.split_emb(split_seq),
+        # token_embeddings=self.model_module.split_emb(split_seq),
         vqvae=self.vqvae_module if self.enable_vqvae else None)
 
     gt_vq_code = self.vqvae_module.extract_code(octree_in)

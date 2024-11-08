@@ -89,19 +89,23 @@ class MAR(nn.Module):
     return torch.cat([torch.ones(octree.nnum[d], device=octree.device).long() * d
                       for d in range(depth_low, depth_high + 1)])
 
-  def forward(self, split, octree_in, depth_low, depth_high, category=None, vqvae=None):
-    targets = copy.deepcopy(split)
+  def forward(self, octree_in, depth_low, depth_high, category=None, split=None, vqvae=None):
+    x_token_embeddings = torch.empty((0, self.num_embed), device=octree_in.device)
+    targets = torch.empty((0), device=octree_in.device).long()
 
     batch_size = octree_in.batch_size
 
     if category == None:
-      category = torch.zeros(batch_size).long().to(split.device)
+      category = torch.zeros(batch_size).long().to(octree_in.device)
     cond = self.class_emb(category)  # 1 x C
 
-    x_token_embeddings = self.split_emb(split)  # S x C
-
+    nnum_vq = octree_in.nnum[depth_high]
+    
+    if split is not None:
+      x_token_embeddings = torch.cat([x_token_embeddings, self.split_emb(split)])  # S x C
+      targets = torch.cat([targets, split], dim=0)
+    
     if vqvae is not None:
-      nnum_vq = octree_in.nnum[depth_high]
       with torch.no_grad():
         vq_code = vqvae.extract_code(octree_in)
         zq, indices, _ = vqvae.quantizer(vq_code)
@@ -126,17 +130,18 @@ class MAR(nn.Module):
     x = self.ln_x(x)
 
     output = {}
-    if vqvae is not None:
+    if split is not None:
       split_logits = self.split_head(x[:-nnum_vq])
-      vq_logits = self.vq_head(x[-nnum_vq:])
       output['split_loss'] = F.cross_entropy(
           split_logits, targets[:-nnum_vq])
+    else:
+      output['split_loss'] = torch.tensor(0.0).to(octree_in.device)
+    
+    if vqvae is not None:
+      vq_logits = self.vq_head(x[-nnum_vq:])
       output['vq_loss'] = F.cross_entropy(
           vq_logits, targets[-nnum_vq:])
     else:
-      split_logits = self.split_head(x)
-      output['split_loss'] = F.cross_entropy(
-          split_logits, targets)
       output['vq_loss'] = torch.tensor(0.0).to(split.device)
 
     return output
@@ -161,7 +166,7 @@ class MAR(nn.Module):
         break
 
       # get depth index
-      depth_idx = self.get_depth_index(octree, octree.full_depth, d)
+      depth_idx = self.get_depth_index(octree, depth_low, d)
       nnum_d = octree.nnum[d]
 
       mask = torch.ones(nnum_d, device=octree.device).long()
@@ -173,9 +178,9 @@ class MAR(nn.Module):
       for i in tqdm(range(self.num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
         position_embeddings = self.pos_emb(
-            x, octree, octree.full_depth, d)  # S x C
+            x, octree, depth_low, d)  # S x C
         x = x + position_embeddings[:x.shape[0], :]
-        x, _ = self.blocks(x, octree, octree.full_depth, d,
+        x, _ = self.blocks(x, octree, depth_low, d,
                            group_idx=depth_idx)  # B x S x C
         x = x[-nnum_d:, :]
         x = self.ln_x(x)
