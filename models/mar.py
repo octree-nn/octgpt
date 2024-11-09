@@ -20,7 +20,7 @@ class MAR(nn.Module):
   def __init__(self,
                num_embed=256,
                num_vq_embed=256,
-               num_head=8,
+               num_heads=8,
                num_blocks=8,
                num_classes=1,
                split_size=2,
@@ -44,11 +44,12 @@ class MAR(nn.Module):
 
     self.split_emb = nn.Embedding(split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
-    self.vq_proj = nn.Linear(num_vq_embed, num_embed)
+    # self.vq_proj = nn.Linear(num_vq_embed, num_embed)
+    self.vq_emb = nn.Embedding(vq_size, num_embed)
 
-    # self.drop = nn.Dropout(drop_rate)
+    self.drop = nn.Dropout(drop_rate)
     self.blocks = OctFormer(
-        channels=num_embed, num_blocks=num_blocks, num_heads=num_head,
+        channels=num_embed, num_blocks=num_blocks, num_heads=num_heads,
         patch_size=patch_size, dilation=dilation, attn_drop=drop_rate,
         proj_drop=drop_rate, pos_emb=eval(pos_emb_type), nempty=False,
         use_checkpoint=use_checkpoint)
@@ -109,7 +110,8 @@ class MAR(nn.Module):
       with torch.no_grad():
         vq_code = vqvae.extract_code(octree_in)
         zq, indices, _ = vqvae.quantizer(vq_code)
-      zq = self.vq_proj(zq)
+      # zq = self.vq_proj(zq)
+      zq = self.vq_emb(indices)
       x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
       targets = torch.cat([targets, indices], dim=0)
 
@@ -125,6 +127,7 @@ class MAR(nn.Module):
     # get depth index
     depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
 
+    x = self.drop(x)
     x, presents = self.blocks(x, octree_in, depth_low,
                               depth_high, past=None, group_idx=depth_idx)
     x = self.ln_x(x)
@@ -180,6 +183,7 @@ class MAR(nn.Module):
         position_embeddings = self.pos_emb(
             x, octree, depth_low, d)  # S x C
         x = x + position_embeddings[:x.shape[0], :]
+        x = self.drop(x)
         x, _ = self.blocks(x, octree, depth_low, d,
                            group_idx=depth_idx)  # B x S x C
         x = x[-nnum_d:, :]
@@ -216,8 +220,9 @@ class MAR(nn.Module):
           ix = sample(vq_logits, temperature=temperature)
           token_indices[mask_to_pred] = ix
           with torch.no_grad():
-            zq = vqvae.quantizer.embedding(ix)
-            token_embedding_d[mask_to_pred] = self.vq_proj(zq)
+            # zq = vqvae.quantizer.embedding(ix)
+            # token_embedding_d[mask_to_pred] = self.vq_proj(zq)
+            token_embedding_d[mask_to_pred] = self.vq_emb(ix)
 
       token_embeddings = torch.cat(
           [token_embeddings, token_embedding_d], dim=0)

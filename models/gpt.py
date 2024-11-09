@@ -19,7 +19,7 @@ class GPT(nn.Module):
 
   def __init__(self,
                num_embed=256,
-               num_head=8,
+               num_heads=8,
                num_blocks=8,
                num_classes=1,
                split_size=2,
@@ -41,7 +41,7 @@ class GPT(nn.Module):
     self.class_emb = nn.Embedding(num_classes, num_embed)
 
     self.drop = nn.Dropout(drop_rate)
-    self.blocks = OctFormer(channels=num_embed, num_blocks=num_blocks, num_heads=num_head,
+    self.blocks = OctFormer(channels=num_embed, num_blocks=num_blocks, num_heads=num_heads,
                             patch_size=patch_size, dilation=dilation, attn_drop=drop_rate, proj_drop=drop_rate, nempty=False, use_checkpoint=use_checkpoint)
 
     self.ln_x = nn.LayerNorm(num_embed)

@@ -96,7 +96,7 @@ MODEL:
   GPT:
     num_embed: 512
     num_vq_embed: 256
-    num_head: 16
+    num_heads: 16
     num_blocks: 32
     num_classes: 1
     split_size: 2

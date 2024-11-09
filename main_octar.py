@@ -39,7 +39,7 @@ class OctarSolver(Solver):
       for p in model.parameters():
         total_params += p.numel()
       print("Total number of parameters: %.3fM" % (total_params / 1e6))
-    
+
     vqvae = VQVAE(**flags.VQVAE)
     model.cuda(device=self.device)
     vqvae.cuda(device=self.device)
@@ -89,11 +89,12 @@ class OctarSolver(Solver):
 
     split_seq = utils.octree2seq(
         octree_in, self.full_depth, self.depth_stop).long()
-    output = self.model(octree_in=octree_in,
-                        depth_low=self.depth_stop, # self.full_depth, 
-                        depth_high=self.depth_stop,
-                        split=None, # split_seq,
-                        vqvae=self.vqvae_module if self.enable_vqvae else None)
+    output = self.model(
+        octree_in=octree_in,
+        depth_low=self.full_depth,
+        depth_high=self.depth_stop,
+        split=split_seq,
+        vqvae=self.vqvae_module if self.enable_vqvae else None)
     losses = [val for key, val in output.items() if 'loss' in key]
     output['loss'] = torch.sum(torch.stack(losses))
     return output
@@ -132,7 +133,7 @@ class OctarSolver(Solver):
     for d in range(self.full_depth + 1, self.depth_stop + 1):
       utils.export_octree(octree_out, d, os.path.join(
           self.logdir, f'results/octree_depth{d}'), index=index)
-      
+
     # decode the octree
     if self.enable_vqvae:
       for d in range(self.depth_stop, self.depth):
@@ -148,12 +149,13 @@ class OctarSolver(Solver):
 
       # extract the mesh
       utils.create_mesh(
-          output['neural_mpu'], os.path.join(self.logdir, f"results/{index}.obj"), 
+          output['neural_mpu'], os.path.join(
+              self.logdir, f"results/{index}.obj"),
           size=self.FLAGS.SOLVER.resolution,
-          bbmin=-self.FLAGS.SOLVER.sdf_scale, bbmax=self.FLAGS.SOLVER.sdf_scale, 
+          bbmin=-self.FLAGS.SOLVER.sdf_scale, bbmax=self.FLAGS.SOLVER.sdf_scale,
           mesh_scale=self.FLAGS.DATA.test.point_scale,
           save_sdf=self.FLAGS.SOLVER.save_sdf)
-  
+
   @torch.no_grad()
   def generate_step(self, index):
     # forward the model
@@ -161,12 +163,12 @@ class OctarSolver(Solver):
     octree_out = ocnn.octree.init_octree(
         self.depth, self.full_depth, 1, self.device)
     octree_out, vq_indices = self.model_module.generate(
-        octree=octree_out, 
+        octree=octree_out,
         depth_low=self.full_depth, depth_high=self.depth_stop,
         vqvae=self.vqvae_module if self.enable_vqvae else None)
-    
+
     self.export_results(octree_out, index, vq_indices)
-    
+
   @torch.no_grad()
   def generate_vq_step(self, index):
     # forward the model
@@ -174,21 +176,23 @@ class OctarSolver(Solver):
     batch = next(self.test_iter)
     self.batch_to_cuda(batch)
     octree_in = batch['octree_gt']
-    split_seq = utils.octree2seq(octree_in, self.full_depth, self.depth_stop).long()
-    
+    split_seq = utils.octree2seq(
+        octree_in, self.full_depth, self.depth_stop).long()
+
     octree_out, vq_indices = self.model_module.generate(
-        octree=octree_in, 
-        depth_low=self.depth_stop, depth_high=self.depth_stop,
-        # token_embeddings=self.model_module.split_emb(split_seq),
+        octree=octree_in,
+        depth_low=self.full_depth, depth_high=self.depth_stop,
+        token_embeddings=self.model_module.split_emb(split_seq),
         vqvae=self.vqvae_module if self.enable_vqvae else None)
 
     gt_vq_code = self.vqvae_module.extract_code(octree_in)
     gt_zq, gt_indices, _ = self.vqvae_module.quantizer(gt_vq_code)
-    
-    print(f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.shape} indices are different")
+
+    print(
+        f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.shape} indices are different")
     self.export_results(octree_in, index + 1, gt_indices)
     self.export_results(octree_out, index, vq_indices)
-    
+
   def _init_octree_out(self, octree_in, depth_out):
     full_depth = octree_in.full_depth    # grow octree to full_depth
     octree_out = ocnn.octree.init_octree(
