@@ -100,11 +100,13 @@ class MAR(nn.Module):
       category = torch.zeros(batch_size).long().to(octree_in.device)
     cond = self.class_emb(category)  # 1 x C
 
-    nnum_vq = octree_in.nnum[depth_high]
     
     if split is not None:
       x_token_embeddings = torch.cat([x_token_embeddings, self.split_emb(split)])  # S x C
       targets = torch.cat([targets, split], dim=0)
+      nnum_split = x_token_embeddings.shape[0]
+    else:
+      nnum_split = 0
     
     if vqvae is not None:
       with torch.no_grad():
@@ -134,16 +136,16 @@ class MAR(nn.Module):
 
     output = {}
     if split is not None:
-      split_logits = self.split_head(x[:-nnum_vq])
+      split_logits = self.split_head(x[:nnum_split])
       output['split_loss'] = F.cross_entropy(
-          split_logits, targets[:-nnum_vq])
+          split_logits, targets[:nnum_split])
     else:
       output['split_loss'] = torch.tensor(0.0).to(octree_in.device)
     
     if vqvae is not None:
-      vq_logits = self.vq_head(x[-nnum_vq:])
+      vq_logits = self.vq_head(x[nnum_split:])
       output['vq_loss'] = F.cross_entropy(
-          vq_logits, targets[-nnum_vq:])
+          vq_logits, targets[nnum_split:])
     else:
       output['vq_loss'] = torch.tensor(0.0).to(split.device)
 
