@@ -6,28 +6,25 @@ from typing import List
 from ocnn.octree import Octree
 from ognn.octreed import OctreeD
 from ognn import mpu
-from models.vqvaev2 import VQVAE, Encoder, Decoder
+from models.vqvae import VQVAE, Encoder, Decoder
 
 class VAE(VQVAE):
 
   def __init__(self, in_channels: int,
+               out_channels: int = 4,
                embedding_sizes: int = 128,
                embedding_channels: int = 64,
                feature: str = 'ND',
+               groups: int = 32,
                n_node_type: int = 7, **kwargs):
-    super().__init__(in_channels, embedding_sizes,
-                     embedding_channels, feature, n_node_type)
+    super().__init__(in_channels, out_channels, embedding_sizes,
+                     embedding_channels, feature, groups, n_node_type)
     self.quantizer = None
-    
-    self.decoder = Decoder(
-        n_node_type, self.dec_enc_channels, self.dec_enc_resblk_nums,
-        self.dec_dec_channels, self.dec_dec_resblk_nums,
-        mpu_stage_nums=6, pred_stage_nums=6)
     
     self.pre_proj = torch.nn.Linear(
         self.enc_channels[-1], embedding_channels * 2, bias=True)
     self.post_proj = torch.nn.Linear(
-        embedding_channels, self.dec_enc_channels[0], bias=True)
+        embedding_channels, self.dec_channels[0], bias=True)
 
   def forward(self, octree_in: Octree, octree_out: OctreeD,
               pos: torch.Tensor = None, update_octree: bool = False):
@@ -36,9 +33,12 @@ class VAE(VQVAE):
     z = posterior.sample()
     kl_loss = posterior.kl()
     code_depth = octree_in.depth - self.encoder.delta_depth
-    octree_in = OctreeD(octree_in)
-    output = self.decode_code(z, code_depth, octree_in, octree_out,
-                              pos, update_octree)
+    if update_octree == True:
+      import copy
+      octree_out = copy.deepcopy(octree_in)
+      octree_out.depth = code_depth
+      octree_out = OctreeD(octree_out)
+    output = self.decode_code(z, code_depth, octree_out, pos, update_octree)
     output['vq_loss'] = kl_loss.mean()
     return output
 
