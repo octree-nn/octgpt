@@ -16,6 +16,7 @@ class TransformShape:
     self.surface_sample_num = flags.surface_sample_num
     self.points_scale = 0.5  # the points are in [-0.5, 0.5]
     self.noise_std = 0.005
+    self.tsdf = 0.05         # truncation of SDF
 
     self.depth = flags.depth
     self.full_depth = flags.full_depth
@@ -66,6 +67,15 @@ class TransformShape:
     points = torch.from_numpy(points[rand_idx]).float()
     sdf = torch.from_numpy(sdf[rand_idx]).float()
     grad = torch.from_numpy(grad[rand_idx]).float()
+
+    # truncate the sdf
+    flag = sdf > self.tsdf
+    sdf[flag] = self.tsdf
+    grad[flag] = 0.0
+    flag = sdf < -self.tsdf
+    sdf[flag] = -self.tsdf
+    grad[flag] = 0.0
+
     return {'pos': points, 'sdf': sdf, 'grad': grad}
 
   def sample_surface(self, sample):
