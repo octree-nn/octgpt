@@ -245,7 +245,7 @@ class SinPosEmb(torch.nn.Module):
 
 
 class OctreeConvPosEmb(torch.nn.Module):
-  def __init__(self, num_embed: int, full_depth: int = 3, max_depth: int = 6, groups: int = 32, nempty: bool = False):
+  def __init__(self, num_embed: int, full_depth: int = 3, max_depth: int = 8, groups: int = 32, nempty: bool = False):
     super().__init__()
     self.full_depth = full_depth
     self.max_depth = max_depth
@@ -471,6 +471,7 @@ class OctFormerStage(torch.nn.Module):
         dilation=1 if (i % 2 == 0) else dilation,
         mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
         attn_drop=attn_drop, proj_drop=proj_drop,
+        pos_emb=pos_emb,
         drop_path=drop_path[i] if isinstance(
             drop_path, list) else drop_path,
 
