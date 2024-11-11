@@ -222,9 +222,9 @@ class MAR(nn.Module):
           ix = sample(vq_logits, temperature=temperature)
           token_indices[mask_to_pred] = ix
           with torch.no_grad():
-            # zq = vqvae.quantizer.embedding(ix)
-            # token_embedding_d[mask_to_pred] = self.vq_proj(zq)
-            token_embedding_d[mask_to_pred] = self.vq_emb(ix)
+            zq = vqvae.quantizer.embedding(ix)
+            token_embedding_d[mask_to_pred] = self.vq_proj(zq)
+            # token_embedding_d[mask_to_pred] = self.vq_emb(ix)
 
       token_embeddings = torch.cat(
           [token_embeddings, token_embedding_d], dim=0)

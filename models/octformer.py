@@ -13,6 +13,9 @@ from ocnn.octree import Octree
 from typing import Optional, List
 from torch.utils.checkpoint import checkpoint
 
+FULL_DEPTH = 3
+MAX_DEPTH = 6
+
 class OctreeT(Octree):
 
   def __init__(self, octree: Octree, data_length: int, patch_size: int = 24, dilation: int = 4,
@@ -179,7 +182,7 @@ class RPE(torch.nn.Module):
 
 
 class SinPosEmb(torch.nn.Module):
-  def __init__(self, num_embed, full_depth=3, max_depth=6):
+  def __init__(self, num_embed: int, full_depth: int = FULL_DEPTH, max_depth: int = MAX_DEPTH):
     super().__init__()
     self.num_embed = num_embed
     self.max_depth = max_depth
@@ -245,7 +248,7 @@ class SinPosEmb(torch.nn.Module):
 
 
 class OctreeConvPosEmb(torch.nn.Module):
-  def __init__(self, num_embed: int, full_depth: int = 3, max_depth: int = 8, groups: int = 32, nempty: bool = False):
+  def __init__(self, num_embed: int, full_depth: int = FULL_DEPTH, max_depth: int = MAX_DEPTH, groups: int = 32, nempty: bool = False):
     super().__init__()
     self.full_depth = full_depth
     self.max_depth = max_depth
