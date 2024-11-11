@@ -226,8 +226,9 @@ class VQVAE(torch.nn.Module):
               pos: torch.Tensor = None, update_octree: bool = False):
     code = self.extract_code(octree_in)
     zq, _, vq_loss = self.quantizer(code)
-    code_depth = octree_in.depth - self.encoder.delta_depth
+
     octree_in = OctreeD(octree_in)
+    code_depth = octree_in.depth - self.encoder.delta_depth
     output = self.decode_code(zq, code_depth, octree_in, octree_out,
                               pos, update_octree)
     output['vq_loss'] = vq_loss

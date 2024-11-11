@@ -73,8 +73,9 @@ class VAESolver(Solver):
   def eval_step(self, batch):
     # forward the model
     octree_in = batch['octree_in'].cuda()
-    octree_out = self._init_octree_out(octree_in)
-    output = self.model.forward(octree_in, octree_out, update_octree=True)
+    octree_out = OctreeD(octree_in)  # initialize
+    # octree_out = self._init_octree_out(octree_in)
+    output = self.model(octree_in, octree_out, update_octree=True)
 
     # extract the mesh
     flags = self.FLAGS.DATA.test

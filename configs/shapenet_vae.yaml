@@ -12,7 +12,7 @@ SOLVER:
   # optimizer
   type: adamw
   weight_decay: 0.01  # default value of adamw
-  lr: 0.001           # default value of adamw
+  lr: 0.0005
 
   # learning rate
   lr_type: poly
@@ -76,6 +76,7 @@ MODEL:
   embedding_channels: 256
   feature: ND
 
+
 LOSS:
   name: shapenet_vae_loss
-  vq_weight: 0.5
+  vq_weight: 1.0
