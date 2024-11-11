@@ -15,7 +15,8 @@ class Encoder(torch.nn.Module):
 
   def __init__(self, in_channels: int,
                channels: List[int] = [32, 32, 64],
-               resblk_nums: List[int] = [1, 1, 1], **kwargs):
+               resblk_nums: List[int] = [1, 1, 1],
+               bottleneck: int = 2, **kwargs):
     super().__init__()
     groups = 32
     self.stage_num = len(channels)
@@ -23,7 +24,7 @@ class Encoder(torch.nn.Module):
 
     self.conv1 = ocnn.modules.OctreeConvGnRelu(in_channels, channels[0], groups)
     self.blocks = torch.nn.ModuleList([ocnn.modules.OctreeResBlocks(
-        channels[i], channels[i], resblk_nums[i], bottleneck=2, nempty=False,
+        channels[i], channels[i], resblk_nums[i], bottleneck, nempty=False,
         resblk=ocnn.modules.OctreeResBlockGn, use_checkpoint=True)
         for i in range(self.stage_num)])
     self.downsample = torch.nn.ModuleList([ocnn.modules.OctreeConvGnRelu(
@@ -52,11 +53,9 @@ class Decoder(torch.nn.Module):
                encoder_blk_nums: List[int] = [1, 2, 4, 2],
                decoder_channels: List[int] = [256, 128, 64, 32, 32, 32],
                decoder_blk_nums: List[int] = [2, 4, 2, 1, 1, 1],
-               mpu_stage_nums: int = 3,
-               pred_stage_nums: int = 3,
-               **kwargs):
+               mpu_stage_nums: int = 3, pred_stage_nums: int = 3,
+               bottleneck: int = 2, **kwargs):
     super().__init__()
-    self.bottleneck = 2
     self.n_edge_type = 7
     self.head_channel = 64
     self.use_checkpoint = True
@@ -78,7 +77,7 @@ class Decoder(torch.nn.Module):
     self.encoder = torch.nn.ModuleList([ognn.nn.GraphResBlocks(
         self.encoder_channels[i], self.encoder_channels[i],
         self.n_edge_type, n_node_types[i], self.norm_type,
-        self.act_type, self.bottleneck, self.encoder_blk_nums[i],
+        self.act_type, bottleneck, self.encoder_blk_nums[i],
         self.resblk_type) for i in range(self.encoder_stages)])
     self.downsample = torch.nn.ModuleList([ognn.nn.GraphDownsample(
         self.encoder_channels[i], self.encoder_channels[i+1],
@@ -93,7 +92,7 @@ class Decoder(torch.nn.Module):
     self.decoder = torch.nn.ModuleList([ognn.nn.GraphResBlocks(
         self.decoder_channels[i], self.decoder_channels[i],
         self.n_edge_type, n_node_types[i], self.norm_type,
-        self.act_type, self.bottleneck, self.decoder_blk_nums[i],
+        self.act_type, bottleneck, self.decoder_blk_nums[i],
         self.resblk_type) for i in range(self.decoder_stages)])
 
     # header
@@ -191,10 +190,11 @@ class VQVAE(torch.nn.Module):
     self.config_network()
 
     self.encoder = Encoder(
-        in_channels, self.enc_channels, self.enc_resblk_nums)
+        in_channels, self.enc_channels, self.enc_resblk_nums, self.bottleneck)
     self.decoder = Decoder(
         n_node_type, self.dec_enc_channels, self.dec_enc_resblk_nums,
-        self.dec_dec_channels, self.dec_dec_resblk_nums)
+        self.dec_dec_channels, self.dec_dec_resblk_nums, self.mpu_stage_nums,
+        self.pred_stage_nums, self.bottleneck)
     self.quantizer = VectorQuantizer(embedding_sizes, embedding_channels)
 
     self.pre_proj = torch.nn.Linear(
@@ -203,7 +203,10 @@ class VQVAE(torch.nn.Module):
         embedding_channels, self.dec_enc_channels[0], bias=True)
 
   def config_network(self):
-    # large network
+    self.bottleneck = 2
+    self.mpu_stage_nums = 3
+    self.pred_stage_nums = 3
+
     self.enc_channels = [32, 32, 64]
     self.enc_resblk_nums = [1, 1, 1]
 
@@ -211,16 +214,6 @@ class VQVAE(torch.nn.Module):
     self.dec_enc_resblk_nums = [1, 2, 4, 2]
     self.dec_dec_channels = [256, 128, 64, 32, 32, 32]
     self.dec_dec_resblk_nums = [2, 4, 2, 2, 1, 1]
-
-  # def config_network(self):
-  #   # small network for reference
-  #   self.enc_channels = [32, 32, 64]
-  #   self.enc_resblk_nums = [1, 1, 1]
-
-  #   self.dec_enc_channels = [64, 128, 256]
-  #   self.dec_enc_resblk_nums = [1, 1, 1]
-  #   self.dec_dec_channels = [256, 128, 64, 32, 32]
-  #   self.dec_dec_resblk_nums = [1, 1, 1, 2, 1]
 
   def forward(self, octree_in: Octree, octree_out: OctreeD,
               pos: torch.Tensor = None, update_octree: bool = False):

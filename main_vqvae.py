@@ -5,16 +5,14 @@ import ognn
 from thsolver import Solver
 from ognn.octreed import OctreeD
 
-from utils import utils
-# from models.vqvae import VQVAE
-from models.vqvaev2 import VQVAE
+from utils import utils, builder
 from datasets import get_shapenet_dataset
 
 
 class VAESolver(Solver):
 
   def get_model(self, flags):
-    return VQVAE(**flags)
+    return builder.build_vqvae_model(flags)
 
   def get_dataset(self, flags):
     return get_shapenet_dataset(flags)
