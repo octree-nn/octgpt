@@ -45,7 +45,6 @@ class MAR(nn.Module):
     self.split_emb = nn.Embedding(split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
     self.vq_proj = nn.Linear(num_vq_embed, num_embed)
-    # self.vq_emb = nn.Embedding(vq_size, num_embed)
 
     self.drop = nn.Dropout(drop_rate)
     self.blocks = OctFormer(
@@ -113,7 +112,6 @@ class MAR(nn.Module):
         vq_code = vqvae.extract_code(octree_in)
         zq, indices, _ = vqvae.quantizer(vq_code)
       zq = self.vq_proj(zq)
-      # zq = self.vq_emb(indices)
       x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
       targets = torch.cat([targets, indices], dim=0)
 
@@ -146,6 +144,12 @@ class MAR(nn.Module):
       vq_logits = self.vq_head(x[nnum_split:])
       output['vq_loss'] = F.cross_entropy(
           vq_logits, targets[nnum_split:])
+      # Top-k Accuracy
+      with torch.no_grad():
+        mask_vq = mask[nnum_split:]
+        top5 = torch.topk(vq_logits[mask_vq.bool()], 5, dim=1).indices
+        correct_top5 = top5.eq(targets[nnum_split:][mask_vq.bool()].view(-1, 1).expand_as(top5))
+        output['top5_accuracy'] = correct_top5.sum().float() / mask_vq.sum().float()
     else:
       output['vq_loss'] = torch.tensor(0.0).to(split.device)
 
@@ -224,7 +228,6 @@ class MAR(nn.Module):
           with torch.no_grad():
             zq = vqvae.quantizer.embedding(ix)
             token_embedding_d[mask_to_pred] = self.vq_proj(zq)
-            # token_embedding_d[mask_to_pred] = self.vq_emb(ix)
 
       token_embeddings = torch.cat(
           [token_embeddings, token_embedding_d], dim=0)

@@ -111,7 +111,7 @@ class OctarSolver(Solver):
     return output
 
   def test_epoch(self, epoch):
-    # super().test_epoch(epoch)
+    super().test_epoch(epoch)
     # generate the mesh
     if epoch % self.FLAGS.SOLVER.generate_every_epoch != 0:
       return

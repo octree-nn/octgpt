@@ -42,7 +42,7 @@ DATA:
     distort: &distort False
 
     # data loading
-    location: &location data/ShapeNet/dataset_10w
+    location: &location data/ShapeNet/dataset_20w
     filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
@@ -80,7 +80,7 @@ MODEL:
   full_depth: *full_depth
   depth_stop: 6
   vqvae_ckpt: saved_ckpt/vqvae_model.pth
-  enable_vqvae: False
+  enable_vqvae: True
   find_unused_parameters: True
   model_name: MAR
 
