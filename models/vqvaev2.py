@@ -224,7 +224,7 @@ class VQVAE(torch.nn.Module):
     code_depth = octree_in.depth - self.encoder.delta_depth
     output = self.decode_code(zq, code_depth, octree_in, octree_out,
                               pos, update_octree)
-    output['vq_loss'] = vq_loss
+    output['vae_loss'] = vq_loss
     return output
 
   def extract_code(self, octree_in: Octree):
@@ -333,3 +333,49 @@ class VectorQuantizerG(torch.nn.Module):
     zq = torch.cat(zqs, dim=1)
     loss = torch.mean(torch.stack(losses))
     return zq, loss
+
+
+class VAE(VQVAE):
+
+  def __init__(self, in_channels: int,
+               embedding_channels: int = 16,
+               feature: str = 'ND',
+               n_node_type: int = 7, **kwargs):
+    super().__init__(in_channels, 128, embedding_channels, feature, n_node_type)
+    self.quantizer = None
+    self.pre_proj = torch.nn.Linear(
+        self.enc_channels[-1], embedding_channels * 2, bias=True)
+
+  def forward(self, octree_in: Octree, octree_out: OctreeD,
+              pos: torch.Tensor = None, update_octree: bool = False):
+    code = self.extract_code(octree_in)
+    posterior = DiagonalGaussianDistribution(code)
+    z = posterior.sample()
+    code_depth = octree_in.depth - self.encoder.delta_depth
+    output = self.decode_code(z, code_depth, octree_in, octree_out,
+                              pos, update_octree)
+    output['kl_loss'] = posterior.kl().mean()
+    output['code_max'] = z.max()
+    output['code_min'] = z.min()
+    return output
+
+
+class DiagonalGaussianDistribution(object):
+
+  def __init__(self, parameters: torch.Tensor):
+    super().__init__()
+    self.parameters = parameters
+    self.device = parameters.device
+
+    self.mean, self.logvar = torch.chunk(parameters, 2, dim=1)
+    self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
+    self.std = torch.exp(0.5 * self.logvar)
+    self.var = torch.exp(self.logvar)
+
+  def sample(self):
+    x = self.mean + self.std * torch.randn(self.mean.shape, device=self.device)
+    return x
+
+  def kl(self):
+    out = 0.5 * (torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar)
+    return out

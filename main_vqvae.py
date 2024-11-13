@@ -43,8 +43,8 @@ class VAESolver(Solver):
       output['grad_loss_%d' % d] = grad_loss
       output['sdf_loss_%d' % d] = sdf_loss
 
-    # vq loss
-    output['vq_loss'] = flags.vq_weight * model_out['vq_loss']
+    # vae loss
+    output['vae_loss'] = flags.vae_weight * model_out['vae_loss']
     return output
 
   def model_forward(self, batch):
