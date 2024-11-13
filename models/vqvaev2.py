@@ -349,18 +349,19 @@ class VAE(VQVAE):
   def forward(self, octree_in: Octree, octree_out: OctreeD,
               pos: torch.Tensor = None, update_octree: bool = False):
     code = self.extract_code(octree_in)
-    posterior = DiagonalGaussianDistribution(code)
+    posterior = DiagonalGaussian(code)
     z = posterior.sample()
+    octree_in = OctreeD(octree_in)
     code_depth = octree_in.depth - self.encoder.delta_depth
     output = self.decode_code(z, code_depth, octree_in, octree_out,
                               pos, update_octree)
-    output['kl_loss'] = posterior.kl().mean()
+    output['vae_loss'] = posterior.kl().mean()
     output['code_max'] = z.max()
     output['code_min'] = z.min()
     return output
 
 
-class DiagonalGaussianDistribution(object):
+class DiagonalGaussian(object):
 
   def __init__(self, parameters: torch.Tensor):
     super().__init__()
@@ -376,6 +377,12 @@ class DiagonalGaussianDistribution(object):
     x = self.mean + self.std * torch.randn(self.mean.shape, device=self.device)
     return x
 
-  def kl(self):
-    out = 0.5 * (torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar)
+  def kl(self, other=None):
+    if other is None:
+      out = 0.5 * (torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar)
+    else:
+      out = 0.5 * torch.sum(
+          torch.pow(self.mean - other.mean, 2) / other.var +
+          self.var / other.var - 1.0 - self.logvar + other.logvar,
+          dim=1)
     return out

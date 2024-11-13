@@ -12,7 +12,7 @@ from datasets import get_shapenet_dataset
 class VAESolver(Solver):
 
   def get_model(self, flags):
-    return builder.build_vqvae_model(flags)
+    return builder.build_vae_model(flags)
 
   def get_dataset(self, flags):
     return get_shapenet_dataset(flags)
