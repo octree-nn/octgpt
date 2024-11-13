@@ -3,8 +3,8 @@ SOLVER:
   run: train
 
   logdir: logs/shapenet_vae/vae
-  max_epoch: 3000
-  test_every_epoch: 1
+  max_epoch: 200
+  test_every_epoch: 5
   generate_every_epoch: 20
   log_per_iter: 50
   ckpt_num: 5
@@ -13,11 +13,11 @@ SOLVER:
   # optimizer
   type: adamw
   weight_decay: 0.01  # default value of adamw
-  lr: 0.0002           # default value of adamw
+  lr: 0.001           # default value of adamw
   rand_seed: 0
 
   # learning rate
-  lr_type: constant
+  lr_type: poly
   step_size: (160,240)
 
   # sdf
@@ -85,7 +85,7 @@ MODEL:
   model_name: MAR
 
   VQVAE:
-    name: vae
+    name: vqvae
 
     in_channels: 4
     out_channels: 4

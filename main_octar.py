@@ -5,9 +5,10 @@ import ognn
 from thsolver import Solver
 from ognn.octreed import OctreeD
 
-from utils import utils
+from utils import utils, builder
 from utils.distributed import get_rank
-from models.vqvae import VQVAE
+# from models.vqvae import VQVAE
+from models.vqvaev2 import VQVAE
 from models.gpt import GPT
 from models.mar import MAR
 from datasets import get_shapenet_dataset
@@ -40,7 +41,7 @@ class OctarSolver(Solver):
         total_params += p.numel()
       print("Total number of parameters: %.3fM" % (total_params / 1e6))
 
-    vqvae = VQVAE(**flags.VQVAE)
+    vqvae = builder.build_vqvae_model(flags.VQVAE)
     model.cuda(device=self.device)
     vqvae.cuda(device=self.device)
 
@@ -125,8 +126,8 @@ class OctarSolver(Solver):
     self.load_checkpoint()
     self.model.eval()
     for iter in tqdm(range(10000), ncols=80):
-      self.generate_step(iter)
-      # self.generate_vq_step(iter)
+      # self.generate_step(iter)
+      self.generate_vq_step(iter)
 
   def export_results(self, octree_out, index, vq_indices=None):
     # export the octree
