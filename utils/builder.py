@@ -1,5 +1,5 @@
 from models.vqvaev2 import VQVAE
-
+from models.vae import VAE
 
 def build_vqvae_model(flags):
 
@@ -42,5 +42,7 @@ def build_vqvae_model(flags):
     return VQVAEb(**flags)
   elif flags.name.lower() == 'vqvae_large':
     return VQVAEl(**flags)
+  elif flags.name.lower() == 'vae':
+    return VAE(**flags)
   else:
     return VQVAE(**flags)   # Default VQVAE with 4.2M parameters.

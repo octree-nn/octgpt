@@ -36,7 +36,6 @@ class VAE(VQVAE):
     if update_octree == True:
       import copy
       octree_out = copy.deepcopy(octree_in)
-      octree_out.depth = code_depth
       octree_out = OctreeD(octree_out)
     output = self.decode_code(z, code_depth, octree_out, pos, update_octree)
     output['vq_loss'] = kl_loss.mean()
