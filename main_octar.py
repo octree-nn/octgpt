@@ -112,7 +112,7 @@ class OctarSolver(Solver):
     return output
 
   def test_epoch(self, epoch):
-    super().test_epoch(epoch)
+    # super().test_epoch(epoch)
     # generate the mesh
     if epoch % self.FLAGS.SOLVER.generate_every_epoch != 0:
       return
@@ -144,7 +144,8 @@ class OctarSolver(Solver):
         octree_out.octree_grow(d + 1)
       doctree_out = OctreeD(octree_out)
       with torch.no_grad():
-        zq = self.vqvae_module.quantizer.embedding(vq_indices)
+        # zq = self.vqvae_module.quantizer.embedding(vq_indices)
+        zq = vq_indices
         output = self.vqvae_module.decode_code(
             zq, self.depth_stop, doctree_out, update_octree=True)
 
@@ -186,12 +187,12 @@ class OctarSolver(Solver):
         token_embeddings=self.model_module.split_emb(split_seq),
         vqvae=self.vqvae_module if self.enable_vqvae else None)
 
-    gt_vq_code = self.vqvae_module.extract_code(octree_in)
-    gt_zq, gt_indices, _ = self.vqvae_module.quantizer(gt_vq_code)
+    # gt_vq_code = self.vqvae_module.extract_code(octree_in)
+    # gt_zq, gt_indices, _ = self.vqvae_module.quantizer(gt_vq_code)
 
-    print(
-        f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.shape} indices are different")
-    self.export_results(octree_in, index + 1, gt_indices)
+    # print(
+    #     f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.shape} indices are different")
+    # self.export_results(octree_in, index + 1, gt_indices)
     self.export_results(octree_out, index, vq_indices)
 
   def _init_octree_out(self, octree_in, depth_out):

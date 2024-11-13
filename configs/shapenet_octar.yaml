@@ -4,7 +4,7 @@ SOLVER:
 
   logdir: logs/shapenet_vae/vae
   max_epoch: 200
-  test_every_epoch: 5
+  test_every_epoch: 1
   generate_every_epoch: 20
   log_per_iter: 50
   ckpt_num: 5
@@ -97,14 +97,14 @@ MODEL:
     num_embed: 256
     num_vq_embed: 256
     num_heads: 8
-    num_blocks: 16
+    num_blocks: 8
     num_classes: 1
     split_size: 2
     vq_size: 128
     patch_size: 4096
     dilation: 2
     drop_rate: 0.1
-    pos_emb_type: SinPosEmb
+    pos_emb_type: OctreeConvPosEmb
     use_checkpoint: True
     mask_ratio_min: 0.7
     start_temperature: 1.0

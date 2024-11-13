@@ -36,6 +36,7 @@ class MAR(nn.Module):
                **kwargs):
     super(MAR, self).__init__()
     self.num_embed = num_embed
+    self.num_vq_embed = num_vq_embed
     self.num_blocks = num_blocks
     self.start_temperature = start_temperature
     self.num_iters = num_iters
@@ -55,7 +56,8 @@ class MAR(nn.Module):
 
     self.ln_x = nn.LayerNorm(num_embed)
     self.split_head = nn.Linear(num_embed, split_size)
-    self.vq_head = nn.Linear(num_embed, vq_size)
+    # self.vq_head = nn.Linear(num_embed, vq_size)
+    self.vq_head = nn.Linear(num_embed, num_vq_embed)
 
     self.mask_ratio_generator = stats.truncnorm(
         (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
@@ -110,10 +112,14 @@ class MAR(nn.Module):
     if vqvae is not None:
       with torch.no_grad():
         vq_code = vqvae.extract_code(octree_in)
-        zq, indices, _ = vqvae.quantizer(vq_code)
+        # zq, indices, _ = vqvae.quantizer(vq_code)
+        from models.vae import DiagonalGaussianDistribution
+        posterior = DiagonalGaussianDistribution(vq_code, kl_std=0.25)
+        vq_code = posterior.sample()
+        zq = vq_code.detach()
       zq = self.vq_proj(zq)
       x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
-      targets = torch.cat([targets, indices], dim=0)
+      # targets = torch.cat([targets, indices], dim=0)
 
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
@@ -134,22 +140,27 @@ class MAR(nn.Module):
 
     output = {}
     if split is not None:
+      mask_split = mask[:nnum_split]
+      targets_split = targets[:nnum_split]
       split_logits = self.split_head(x[:nnum_split])
       output['split_loss'] = F.cross_entropy(
-          split_logits, targets[:nnum_split])
+          split_logits[mask_split], targets_split[mask_split])
     else:
       output['split_loss'] = torch.tensor(0.0).to(octree_in.device)
     
     if vqvae is not None:
+      mask_vq = mask[nnum_split:]
+      # targets_vq = targets[nnum_split:]
       vq_logits = self.vq_head(x[nnum_split:])
-      output['vq_loss'] = F.cross_entropy(
-          vq_logits, targets[nnum_split:])
-      # Top-k Accuracy
-      with torch.no_grad():
-        mask_vq = mask[nnum_split:]
-        top5 = torch.topk(vq_logits[mask_vq.bool()], 5, dim=1).indices
-        correct_top5 = top5.eq(targets[nnum_split:][mask_vq.bool()].view(-1, 1).expand_as(top5))
-        output['top5_accuracy'] = correct_top5.sum().float() / mask_vq.sum().float()
+      # output['vq_loss'] = F.cross_entropy(
+      #     vq_logits[mask_vq], targets_vq[mask_vq])
+      output['vq_loss'] = F.mse_loss(vq_logits[mask_vq], vq_code[mask_vq])
+      # # Top-k Accuracy
+      # with torch.no_grad():
+      #   mask_vq = mask[nnum_split:]
+      #   top5 = torch.topk(vq_logits[mask_vq.bool()], 5, dim=1).indices
+      #   correct_top5 = top5.eq(targets[nnum_split:][mask_vq.bool()].view(-1, 1).expand_as(top5))
+      #   output['top5_accuracy'] = correct_top5.sum().float() / mask_vq.sum().float()
     else:
       output['vq_loss'] = torch.tensor(0.0).to(split.device)
 
@@ -181,6 +192,7 @@ class MAR(nn.Module):
       mask = torch.ones(nnum_d, device=octree.device).long()
       token_indices = -1 * \
           torch.ones(nnum_d, device=octree.device).long()
+      vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
       token_embedding_d = cond.repeat(nnum_d, 1)
       orders = torch.randperm(nnum_d, device=octree.device)
 
@@ -223,11 +235,13 @@ class MAR(nn.Module):
           token_embedding_d[mask_to_pred] = self.split_emb(ix)
         else:
           vq_logits = self.vq_head(x[mask_to_pred])
-          ix = sample(vq_logits, temperature=temperature)
-          token_indices[mask_to_pred] = ix
+          # ix = sample(vq_logits, temperature=temperature)
+          # token_indices[mask_to_pred] = ix
           with torch.no_grad():
-            zq = vqvae.quantizer.embedding(ix)
-            token_embedding_d[mask_to_pred] = self.vq_proj(zq)
+            # zq = vqvae.quantizer.embedding(ix)
+            # token_embedding_d[mask_to_pred] = self.vq_proj(zq)
+            vq_code[mask_to_pred] = vq_logits
+            token_embedding_d[mask_to_pred] = self.vq_proj(vq_logits)
 
       token_embeddings = torch.cat(
           [token_embeddings, token_embedding_d], dim=0)
@@ -238,6 +252,7 @@ class MAR(nn.Module):
         # utils.export_octree(
         # octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
       else:
-        vq_indices = token_indices
+        # vq_indices = token_indices
+        vq_indices = vq_code
 
     return octree, vq_indices
