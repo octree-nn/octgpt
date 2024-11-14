@@ -2,7 +2,7 @@ import torch
 import ocnn
 import ognn
 
-from typing import List
+from typing import List, Optional
 from ocnn.octree import Octree
 from ognn.octreed import OctreeD
 from ognn import mpu
@@ -219,7 +219,6 @@ class VQVAE(torch.nn.Module):
               pos: torch.Tensor = None, update_octree: bool = False):
     code = self.extract_code(octree_in)
     zq, _, vq_loss = self.quantizer(code)
-
     octree_in = OctreeD(octree_in)
     code_depth = octree_in.depth - self.encoder.delta_depth
     output = self.decode_code(zq, code_depth, octree_in, octree_out,
@@ -377,7 +376,7 @@ class DiagonalGaussian(object):
     x = self.mean + self.std * torch.randn(self.mean.shape, device=self.device)
     return x
 
-  def kl(self, other=None):
+  def kl(self, other: Optional['DiagonalGaussian'] = None):
     if other is None:
       out = 0.5 * (torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar)
     else:
