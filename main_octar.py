@@ -126,8 +126,8 @@ class OctarSolver(Solver):
     self.load_checkpoint()
     self.model.eval()
     for iter in tqdm(range(10000), ncols=80):
-      # self.generate_step(iter)
-      self.generate_vq_step(iter)
+      self.generate_step(iter)
+      # self.generate_vq_step(iter)
 
   def export_results(self, octree_out, index, vq_indices=None):
     # export the octree

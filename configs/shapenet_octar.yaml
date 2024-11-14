@@ -42,7 +42,7 @@ DATA:
     distort: &distort False
 
     # data loading
-    location: &location data/ShapeNet/dataset_20w
+    location: &location data/ShapeNet/dataset_256
     filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
@@ -97,7 +97,7 @@ MODEL:
     num_embed: 256
     num_vq_embed: 256
     num_heads: 8
-    num_blocks: 8
+    num_blocks: 16
     num_classes: 1
     split_size: 2
     vq_size: 128

@@ -123,8 +123,8 @@ class MAR(nn.Module):
 
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
-    mask = self.random_masking(seq_len, orders)
-    x_token_embeddings[mask.bool()] = cond
+    mask = self.random_masking(seq_len, orders).bool()
+    x_token_embeddings[mask] = cond
     # positional embedding
     position_embeddings = self.pos_emb(
         x_token_embeddings, octree_in, depth_low, depth_high)  # S x C
@@ -180,7 +180,7 @@ class MAR(nn.Module):
     # past = torch.empty(
     # (self.n_layer, 0, self.n_embed * 3), device=octree.device)
     past = None
-    for d in range(depth_high, depth_high + 1):
+    for d in range(depth_low, depth_high + 1):
       # if not need to generate vq code
       if d == depth_high and vqvae == None:
         break
@@ -189,7 +189,7 @@ class MAR(nn.Module):
       depth_idx = self.get_depth_index(octree, depth_low, d)
       nnum_d = octree.nnum[d]
 
-      mask = torch.ones(nnum_d, device=octree.device).long()
+      mask = torch.ones(nnum_d, device=octree.device).bool()
       token_indices = -1 * \
           torch.ones(nnum_d, device=octree.device).long()
       vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
@@ -216,7 +216,7 @@ class MAR(nn.Module):
             torch.sum(mask, dim=-1, keepdims=True) - 1, mask_len)).long()
 
         # get masking for next iteration and locations to be predicted in this iteration
-        mask_next = self.mask_by_order(mask_len, orders)
+        mask_next = self.mask_by_order(mask_len, orders).bool()
 
         if i >= self.num_iters - 1:
           mask_to_pred = mask.bool()
