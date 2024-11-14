@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 from models.octformer import OctFormer, SinPosEmb, OctreeConvPosEmb
+from models.vae import DiagonalGaussianDistribution
 from utils.utils import seq2octree, sample
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class MAR(nn.Module):
                drop_rate=0.1,
                pos_emb_type="SinPosEmb",
                use_checkpoint=True,
+               vae_name="vqvae",
                mask_ratio_min=0.7,
                start_temperature=1.0,
                num_iters=256,
@@ -40,6 +42,7 @@ class MAR(nn.Module):
     self.num_blocks = num_blocks
     self.start_temperature = start_temperature
     self.num_iters = num_iters
+    self.vq_name = vae_name
 
     self.pos_emb = eval(pos_emb_type)(num_embed)
 
@@ -56,8 +59,10 @@ class MAR(nn.Module):
 
     self.ln_x = nn.LayerNorm(num_embed)
     self.split_head = nn.Linear(num_embed, split_size)
-    # self.vq_head = nn.Linear(num_embed, vq_size)
-    self.vq_head = nn.Linear(num_embed, num_vq_embed)
+    if self.vq_name == "vqvae":
+      self.vq_head = nn.Linear(num_embed, vq_size)
+    elif self.vq_name == "vae":
+      self.vq_head = nn.Linear(num_embed, num_vq_embed)
 
     self.mask_ratio_generator = stats.truncnorm(
         (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
@@ -93,8 +98,6 @@ class MAR(nn.Module):
 
   def forward(self, octree_in, depth_low, depth_high, category=None, split=None, vqvae=None):
     x_token_embeddings = torch.empty((0, self.num_embed), device=octree_in.device)
-    targets = torch.empty((0), device=octree_in.device).long()
-
     batch_size = octree_in.batch_size
 
     if category == None:
@@ -104,7 +107,7 @@ class MAR(nn.Module):
     
     if split is not None:
       x_token_embeddings = torch.cat([x_token_embeddings, self.split_emb(split)])  # S x C
-      targets = torch.cat([targets, split], dim=0)
+      targets_split = copy.deepcopy(split)
       nnum_split = x_token_embeddings.shape[0]
     else:
       nnum_split = 0
@@ -112,14 +115,15 @@ class MAR(nn.Module):
     if vqvae is not None:
       with torch.no_grad():
         vq_code = vqvae.extract_code(octree_in)
-        # zq, indices, _ = vqvae.quantizer(vq_code)
-        from models.vae import DiagonalGaussianDistribution
-        posterior = DiagonalGaussianDistribution(vq_code, kl_std=0.25)
-        vq_code = posterior.sample()
-        zq = vq_code.detach()
+        if self.vq_name == "vqvae":
+          zq, indices, _ = vqvae.quantizer(vq_code)
+          targets_vq = copy.deepcopy(indices)
+        elif self.vq_name == "vae":
+          posterior = DiagonalGaussianDistribution(vq_code, kl_std=0.25)
+          zq = posterior.sample()
+          targets_vq = copy.deepcopy(zq)
       zq = self.vq_proj(zq)
       x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
-      # targets = torch.cat([targets, indices], dim=0)
 
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
@@ -141,7 +145,6 @@ class MAR(nn.Module):
     output = {}
     if split is not None:
       mask_split = mask[:nnum_split]
-      targets_split = targets[:nnum_split]
       split_logits = self.split_head(x[:nnum_split])
       output['split_loss'] = F.cross_entropy(
           split_logits[mask_split], targets_split[mask_split])
@@ -150,17 +153,18 @@ class MAR(nn.Module):
     
     if vqvae is not None:
       mask_vq = mask[nnum_split:]
-      # targets_vq = targets[nnum_split:]
       vq_logits = self.vq_head(x[nnum_split:])
-      # output['vq_loss'] = F.cross_entropy(
-      #     vq_logits[mask_vq], targets_vq[mask_vq])
-      output['vq_loss'] = F.mse_loss(vq_logits[mask_vq], vq_code[mask_vq])
-      # # Top-k Accuracy
-      # with torch.no_grad():
-      #   mask_vq = mask[nnum_split:]
-      #   top5 = torch.topk(vq_logits[mask_vq.bool()], 5, dim=1).indices
-      #   correct_top5 = top5.eq(targets[nnum_split:][mask_vq.bool()].view(-1, 1).expand_as(top5))
-      #   output['top5_accuracy'] = correct_top5.sum().float() / mask_vq.sum().float()
+      if self.vq_name == "vqvae":
+        output['vq_loss'] = F.cross_entropy(
+            vq_logits[mask_vq], targets_vq[mask_vq])
+        # Top-k Accuracy
+        with torch.no_grad():
+          mask_vq = mask[nnum_split:]
+          top5 = torch.topk(vq_logits[mask_vq], 5, dim=1).indices
+          correct_top5 = top5.eq(targets_vq[mask_vq].view(-1, 1).expand_as(top5))
+          output['top5_accuracy'] = correct_top5.sum().float() / mask_vq.sum().float()
+      elif self.vq_name == "vae":
+        output['vq_loss'] = F.mse_loss(vq_logits[mask_vq], targets_vq[mask_vq])
     else:
       output['vq_loss'] = torch.tensor(0.0).to(split.device)
 
@@ -176,11 +180,11 @@ class MAR(nn.Module):
       token_embeddings = torch.empty(
           (0, self.num_embed), device=octree.device)
 
-    vq_indices = None
+    vq_code = None
     # past = torch.empty(
     # (self.n_layer, 0, self.n_embed * 3), device=octree.device)
     past = None
-    for d in range(depth_low, depth_high + 1):
+    for d in range(depth_high, depth_high + 1):
       # if not need to generate vq code
       if d == depth_high and vqvae == None:
         break
@@ -190,9 +194,10 @@ class MAR(nn.Module):
       nnum_d = octree.nnum[d]
 
       mask = torch.ones(nnum_d, device=octree.device).bool()
-      token_indices = -1 * \
-          torch.ones(nnum_d, device=octree.device).long()
-      vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
+      if d < depth_high:
+        split = -1 * torch.ones(nnum_d, device=octree.device)
+      else:
+        vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
       token_embedding_d = cond.repeat(nnum_d, 1)
       orders = torch.randperm(nnum_d, device=octree.device)
 
@@ -231,15 +236,17 @@ class MAR(nn.Module):
         if d < depth_high:
           split_logits = self.split_head(x[mask_to_pred])
           ix = sample(split_logits, temperature=temperature)
-          token_indices[mask_to_pred] = ix
+          split[mask_to_pred] = ix
           token_embedding_d[mask_to_pred] = self.split_emb(ix)
         else:
           vq_logits = self.vq_head(x[mask_to_pred])
-          # ix = sample(vq_logits, temperature=temperature)
-          # token_indices[mask_to_pred] = ix
-          with torch.no_grad():
-            # zq = vqvae.quantizer.embedding(ix)
-            # token_embedding_d[mask_to_pred] = self.vq_proj(zq)
+          if self.vq_name == "vqvae":
+            ix = sample(vq_logits, temperature=temperature)
+            with torch.no_grad():
+              zq = vqvae.quantizer.embedding(ix)
+              vq_code[mask_to_pred] = zq
+              token_embedding_d[mask_to_pred] = self.vq_proj(zq)
+          elif self.vq_name == "vae":
             vq_code[mask_to_pred] = vq_logits
             token_embedding_d[mask_to_pred] = self.vq_proj(vq_logits)
 
@@ -247,12 +254,9 @@ class MAR(nn.Module):
           [token_embeddings, token_embedding_d], dim=0)
 
       if d < depth_high:
-        split = token_indices
+        split = split.long()
         octree = seq2octree(octree, split, d, d + 1)
         # utils.export_octree(
         # octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
-      else:
-        # vq_indices = token_indices
-        vq_indices = vq_code
 
-    return octree, vq_indices
+    return octree, vq_code

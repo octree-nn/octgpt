@@ -27,10 +27,13 @@ class OctarSolver(Solver):
 
   def get_model(self):
     flags = self.FLAGS.MODEL
-    if flags.model_name == "GPT":
-      model = GPT(**flags.GPT)
-    elif flags.model_name == "MAR":
-      model = MAR(**flags.GPT)
+    # if flags.model_name == "GPT":
+    #   model = GPT(**flags.GPT)
+    if flags.model_name == "MAR":
+      model = MAR(
+        vae_name=flags.VQVAE.name,
+        num_vq_embed=flags.VQVAE.embedding_channels, 
+        **flags.GPT)
     else:
       raise NotImplementedError("Model not implemented")
 
@@ -126,10 +129,10 @@ class OctarSolver(Solver):
     self.load_checkpoint()
     self.model.eval()
     for iter in tqdm(range(10000), ncols=80):
-      self.generate_step(iter)
-      # self.generate_vq_step(iter)
+      # self.generate_step(iter)
+      self.generate_vq_step(iter)
 
-  def export_results(self, octree_out, index, vq_indices=None):
+  def export_results(self, octree_out, index, vq_code=None):
     # export the octree
     for d in range(self.full_depth + 1, self.depth_stop + 1):
       utils.export_octree(octree_out, d, os.path.join(
@@ -144,10 +147,8 @@ class OctarSolver(Solver):
         octree_out.octree_grow(d + 1)
       doctree_out = OctreeD(octree_out)
       with torch.no_grad():
-        # zq = self.vqvae_module.quantizer.embedding(vq_indices)
-        zq = vq_indices
         output = self.vqvae_module.decode_code(
-            zq, self.depth_stop, doctree_out, update_octree=True)
+            vq_code, self.depth_stop, doctree_out, update_octree=True)
 
       # extract the mesh
       utils.create_mesh(
@@ -164,12 +165,12 @@ class OctarSolver(Solver):
     index = self.world_size * index + get_rank()
     octree_out = ocnn.octree.init_octree(
         self.depth, self.full_depth, 1, self.device)
-    octree_out, vq_indices = self.model_module.generate(
+    octree_out, vq_code = self.model_module.generate(
         octree=octree_out,
         depth_low=self.full_depth, depth_high=self.depth_stop,
         vqvae=self.vqvae_module if self.enable_vqvae else None)
 
-    self.export_results(octree_out, index, vq_indices)
+    self.export_results(octree_out, index, vq_code)
 
   @torch.no_grad()
   def generate_vq_step(self, index):
@@ -181,7 +182,7 @@ class OctarSolver(Solver):
     split_seq = utils.octree2seq(
         octree_in, self.full_depth, self.depth_stop).long()
 
-    octree_out, vq_indices = self.model_module.generate(
+    octree_out, vq_code = self.model_module.generate(
         octree=octree_in,
         depth_low=self.full_depth, depth_high=self.depth_stop,
         token_embeddings=self.model_module.split_emb(split_seq),
@@ -193,7 +194,7 @@ class OctarSolver(Solver):
     # print(
     #     f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.shape} indices are different")
     # self.export_results(octree_in, index + 1, gt_indices)
-    self.export_results(octree_out, index, vq_indices)
+    self.export_results(octree_out, index, vq_code)
 
   def _init_octree_out(self, octree_in, depth_out):
     full_depth = octree_in.full_depth    # grow octree to full_depth
