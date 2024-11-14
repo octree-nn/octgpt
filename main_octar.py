@@ -44,7 +44,7 @@ class OctarSolver(Solver):
         total_params += p.numel()
       print("Total number of parameters: %.3fM" % (total_params / 1e6))
 
-    vqvae = builder.build_vqvae_model(flags.VQVAE)
+    vqvae = builder.build_vae_model(flags.VQVAE)
     model.cuda(device=self.device)
     vqvae.cuda(device=self.device)
 

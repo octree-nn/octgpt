@@ -1,7 +1,7 @@
-from models.vqvaev2 import VQVAE
-from models.vae import VAE
+from models.vqvaev2 import VQVAE, VAE
 
-def build_vqvae_model(flags):
+
+def build_vae_model(flags):
 
   class VQVAEs(VQVAE):
     def config_network(self):
@@ -39,10 +39,10 @@ def build_vqvae_model(flags):
   if flags.name.lower() == 'vqvae_small':
     return VQVAEs(**flags)  # Small VQVAE with 2.5M parameters
   elif flags.name.lower() == 'vqvae_big':
-    return VQVAEb(**flags)
+    return VQVAEb(**flags)  # Big VQVAE with 4.6M parameters
   elif flags.name.lower() == 'vqvae_large':
-    return VQVAEl(**flags)
+    return VQVAEl(**flags)  # Large VQVAE with 8.0M parameters
   elif flags.name.lower() == 'vae':
-    return VAE(**flags)
+    return VAE(**flags)     # Default VQVAE with 4.2M parameters
   else:
-    return VQVAE(**flags)   # Default VQVAE with 4.2M parameters.
+    return VQVAE(**flags)   # Default VQVAE with 4.2M parameters
