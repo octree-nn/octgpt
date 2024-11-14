@@ -10,11 +10,12 @@ import torch
 import torch.nn.functional as F
 import ocnn
 from ocnn.octree import Octree
-from typing import Optional, List
+from typing import Optional
 from torch.utils.checkpoint import checkpoint
 
 FULL_DEPTH = 3
 MAX_DEPTH = 6
+
 
 class OctreeT(Octree):
 
@@ -156,8 +157,7 @@ class RPE(torch.nn.Module):
     self.dilation = dilation
     self.pos_bnd = self.get_pos_bnd(patch_size)
     self.rpe_num = 2 * self.pos_bnd + 1
-    self.rpe_table = torch.nn.Parameter(
-        torch.zeros(3*self.rpe_num, num_heads))
+    self.rpe_table = torch.nn.Parameter(torch.zeros(3*self.rpe_num, num_heads))
     torch.nn.init.trunc_normal_(self.rpe_table, std=0.02)
 
   def get_pos_bnd(self, patch_size: int):
@@ -253,8 +253,9 @@ class OctreeConvPosEmb(torch.nn.Module):
     self.full_depth = full_depth
     self.max_depth = max_depth
     self.conv = torch.nn.ModuleList([
-      ocnn.modules.OctreeConvGnRelu(in_channels=num_embed, out_channels=num_embed, group=groups, nempty=nempty) 
-         for i in range(max_depth - full_depth + 1)])
+        ocnn.modules.OctreeConvGnRelu(
+            in_channels=num_embed, out_channels=num_embed, group=groups, nempty=nempty)
+        for i in range(max_depth - full_depth + 1)])
     self.depth_emb = torch.nn.Embedding(
         self.max_depth - self.full_depth + 1, num_embed)
 
