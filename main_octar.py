@@ -8,7 +8,7 @@ from ognn.octreed import OctreeD
 from utils import utils, builder
 from utils.distributed import get_rank
 # from models.vqvae import VQVAE
-from models.vqvaev2 import VQVAE
+from models.vae import VQVAE
 from models.gpt import GPT
 from models.mar import MAR
 from datasets import get_shapenet_dataset
@@ -32,7 +32,7 @@ class OctarSolver(Solver):
     if flags.model_name == "MAR":
       model = MAR(
         vae_name=flags.VQVAE.name,
-        num_vq_embed=flags.VQVAE.embedding_channels, 
+        num_vq_embed=flags.VQVAE.embedding_channels,
         **flags.GPT)
     else:
       raise NotImplementedError("Model not implemented")

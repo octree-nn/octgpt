@@ -1,4 +1,4 @@
-from models.vqvaev2 import VQVAE, VAE
+from models.vae import VQVAE, VAE
 
 
 def build_vae_model(flags):

@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 from models.octformer import OctFormer, SinPosEmb, OctreeConvPosEmb
-from models.vae import DiagonalGaussianDistribution
+from models.vae import DiagonalGaussian
 from utils.utils import seq2octree, sample
 logger = logging.getLogger(__name__)
 
@@ -104,14 +104,14 @@ class MAR(nn.Module):
       category = torch.zeros(batch_size).long().to(octree_in.device)
     cond = self.class_emb(category)  # 1 x C
 
-    
+
     if split is not None:
       x_token_embeddings = torch.cat([x_token_embeddings, self.split_emb(split)])  # S x C
       targets_split = copy.deepcopy(split)
       nnum_split = x_token_embeddings.shape[0]
     else:
       nnum_split = 0
-    
+
     if vqvae is not None:
       with torch.no_grad():
         vq_code = vqvae.extract_code(octree_in)
@@ -119,7 +119,7 @@ class MAR(nn.Module):
           zq, indices, _ = vqvae.quantizer(vq_code)
           targets_vq = copy.deepcopy(indices)
         elif self.vq_name == "vae":
-          posterior = DiagonalGaussianDistribution(vq_code, kl_std=0.25)
+          posterior = DiagonalGaussian(vq_code, kl_std=0.25)
           zq = posterior.sample()
           targets_vq = copy.deepcopy(zq)
       zq = self.vq_proj(zq)
@@ -150,7 +150,7 @@ class MAR(nn.Module):
           split_logits[mask_split], targets_split[mask_split])
     else:
       output['split_loss'] = torch.tensor(0.0).to(octree_in.device)
-    
+
     if vqvae is not None:
       mask_vq = mask[nnum_split:]
       vq_logits = self.vq_head(x[nnum_split:])
