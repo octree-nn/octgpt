@@ -179,77 +179,6 @@ class Decoder(torch.nn.Module):
     return output
 
 
-class VQVAE(torch.nn.Module):
-
-  def __init__(self, in_channels: int,
-               embedding_sizes: int = 128,
-               embedding_channels: int = 64,
-               feature: str = 'ND',
-               n_node_type: int = 7, **kwargs):
-    super().__init__()
-    self.feature = feature
-    self.config_network()
-
-    self.encoder = Encoder(
-        in_channels, self.enc_channels, self.enc_resblk_nums, self.bottleneck)
-    self.decoder = Decoder(
-        n_node_type, self.dec_enc_channels, self.dec_enc_resblk_nums,
-        self.dec_dec_channels, self.dec_dec_resblk_nums, self.mpu_stage_nums,
-        self.pred_stage_nums, self.bottleneck)
-    self.quantizer = VectorQuantizer(embedding_sizes, embedding_channels)
-
-    self.pre_proj = torch.nn.Linear(
-        self.enc_channels[-1], embedding_channels, bias=True)
-    self.post_proj = torch.nn.Linear(
-        embedding_channels, self.dec_enc_channels[0], bias=True)
-
-  def config_network(self):
-    self.bottleneck = 2
-    self.mpu_stage_nums = 3
-    self.pred_stage_nums = 3
-
-    self.enc_channels = [32, 32, 64]
-    self.enc_resblk_nums = [1, 1, 1]
-
-    self.dec_enc_channels = [32, 64, 128, 256]
-    self.dec_enc_resblk_nums = [1, 2, 4, 2]
-    self.dec_dec_channels = [256, 128, 64, 32, 32, 32]
-    self.dec_dec_resblk_nums = [2, 4, 2, 2, 1, 1]
-
-  def forward(self, octree_in: Octree, octree_out: OctreeD,
-              pos: torch.Tensor = None, update_octree: bool = False):
-    code = self.extract_code(octree_in)
-    zq, _, vq_loss = self.quantizer(code)
-    octree_in = OctreeD(octree_in)
-    code_depth = octree_in.depth - self.encoder.delta_depth
-    output = self.decode_code(zq, code_depth, octree_in, octree_out,
-                              pos, update_octree)
-    output['vae_loss'] = vq_loss
-    return output
-
-  def extract_code(self, octree_in: Octree):
-    depth = octree_in.depth
-    data = octree_in.get_input_feature(feature=self.feature)
-    conv = self.encoder(data, octree_in, depth)
-    code = self.pre_proj(conv)    # project features to the vae code
-    return code
-
-  def decode_code(self, code: torch.Tensor, code_depth: int, octree_in: OctreeD,
-                  octree_out: OctreeD, pos: torch.Tensor = None,
-                  update_octree: bool = False):
-    # project the vae code to features
-    data = self.post_proj(code)
-
-    # `data` is defined on the octree, here we need pad zeros to be compatible
-    # with the dual octree
-    data = octree_in.pad_zeros(data, code_depth)
-
-    # run the decoder defined on dual octrees
-    output = self.decoder(data, code_depth, octree_in, octree_out,
-                          pos, update_octree)
-    return output
-
-
 class VectorQuantizer(torch.nn.Module):
 
   def __init__(self, K: int, D: int, beta: float = 0.5):
@@ -362,32 +291,6 @@ class VectorQuantizerG(torch.nn.Module):
     return zq, loss
 
 
-class VAE(VQVAE):
-
-  def __init__(self, in_channels: int,
-               embedding_channels: int = 16,
-               feature: str = 'ND',
-               n_node_type: int = 7, **kwargs):
-    super().__init__(in_channels, 128, embedding_channels, feature, n_node_type)
-    self.quantizer = None
-    self.pre_proj = torch.nn.Linear(
-        self.enc_channels[-1], embedding_channels * 2, bias=True)
-
-  def forward(self, octree_in: Octree, octree_out: OctreeD,
-              pos: torch.Tensor = None, update_octree: bool = False):
-    code = self.extract_code(octree_in)
-    posterior = DiagonalGaussian(code)
-    z = posterior.sample()
-    octree_in = OctreeD(octree_in)
-    code_depth = octree_in.depth - self.encoder.delta_depth
-    output = self.decode_code(z, code_depth, octree_in, octree_out,
-                              pos, update_octree)
-    output['vae_loss'] = posterior.kl().mean()
-    output['code_max'] = z.max()
-    output['code_min'] = z.min()
-    return output
-
-
 class DiagonalGaussian(object):
 
   def __init__(self, parameters: torch.Tensor):
@@ -411,3 +314,100 @@ class DiagonalGaussian(object):
       out = 0.5 * (torch.pow(self.mean - other.mean, 2) / other.var +
                    self.var / other.var - 1.0 - self.logvar + other.logvar)
     return out
+
+
+class VQVAE(torch.nn.Module):
+
+  def __init__(self, in_channels: int,
+               embedding_sizes: int = 128,
+               embedding_channels: int = 64,
+               feature: str = 'ND',
+               n_node_type: int = 7, **kwargs):
+    super().__init__()
+    self.feature = feature
+    self.config_network()
+
+    self.encoder = Encoder(
+        in_channels, self.enc_channels, self.enc_resblk_nums, self.bottleneck)
+    self.decoder = Decoder(
+        n_node_type, self.dec_enc_channels, self.dec_enc_resblk_nums,
+        self.dec_dec_channels, self.dec_dec_resblk_nums, self.mpu_stage_nums,
+        self.pred_stage_nums, self.bottleneck)
+    self.quantizer = VectorQuantizer(embedding_sizes, embedding_channels)
+
+    self.pre_proj = torch.nn.Linear(
+        self.enc_channels[-1], embedding_channels, bias=True)
+    self.post_proj = torch.nn.Linear(
+        embedding_channels, self.dec_enc_channels[0], bias=True)
+
+  def config_network(self):
+    self.bottleneck = 2
+    self.mpu_stage_nums = 3
+    self.pred_stage_nums = 3
+
+    self.enc_channels = [32, 32, 64]
+    self.enc_resblk_nums = [1, 1, 1]
+
+    self.dec_enc_channels = [32, 64, 128, 256]
+    self.dec_enc_resblk_nums = [1, 2, 4, 2]
+    self.dec_dec_channels = [256, 128, 64, 32, 32, 32]
+    self.dec_dec_resblk_nums = [2, 4, 2, 2, 1, 1]
+
+  def forward(self, octree_in: Octree, octree_out: OctreeD,
+              pos: torch.Tensor = None, update_octree: bool = False):
+    code = self.extract_code(octree_in)
+    zq, _, vq_loss = self.quantizer(code)
+    octree_in = OctreeD(octree_in)
+    code_depth = octree_in.depth - self.encoder.delta_depth
+    output = self.decode_code(zq, code_depth, octree_in, octree_out,
+                              pos, update_octree)
+    output['vae_loss'] = vq_loss
+    return output
+
+  def extract_code(self, octree_in: Octree):
+    depth = octree_in.depth
+    data = octree_in.get_input_feature(feature=self.feature)
+    conv = self.encoder(data, octree_in, depth)
+    code = self.pre_proj(conv)    # project features to the vae code
+    return code
+
+  def decode_code(self, code: torch.Tensor, code_depth: int, octree_in: OctreeD,
+                  octree_out: OctreeD, pos: torch.Tensor = None,
+                  update_octree: bool = False):
+    # project the vae code to features
+    data = self.post_proj(code)
+
+    # `data` is defined on the octree, here we need pad zeros to be compatible
+    # with the dual octree
+    data = octree_in.pad_zeros(data, code_depth)
+
+    # run the decoder defined on dual octrees
+    output = self.decoder(data, code_depth, octree_in, octree_out,
+                          pos, update_octree)
+    return output
+
+
+class VAE(VQVAE):
+
+  def __init__(self, in_channels: int,
+               embedding_channels: int = 16,
+               feature: str = 'ND',
+               n_node_type: int = 7, **kwargs):
+    super().__init__(in_channels, 128, embedding_channels, feature, n_node_type)
+    self.quantizer = None
+    self.pre_proj = torch.nn.Linear(
+        self.enc_channels[-1], embedding_channels * 2, bias=True)
+
+  def forward(self, octree_in: Octree, octree_out: OctreeD,
+              pos: torch.Tensor = None, update_octree: bool = False):
+    code = self.extract_code(octree_in)
+    posterior = DiagonalGaussian(code)
+    z = posterior.sample()
+    octree_in = OctreeD(octree_in)
+    code_depth = octree_in.depth - self.encoder.delta_depth
+    output = self.decode_code(z, code_depth, octree_in, octree_out,
+                              pos, update_octree)
+    output['vae_loss'] = posterior.kl().mean()
+    # output['code_max'] = z.max()
+    # output['code_min'] = z.min()
+    return output
