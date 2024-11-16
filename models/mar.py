@@ -184,18 +184,19 @@ class MAR(nn.Module):
     # past = torch.empty(
     # (self.n_layer, 0, self.n_embed * 3), device=octree.device)
     past = None
-    for d in range(depth_high, depth_high + 1):
+    for d in range(depth_low, depth_high + 1):
       # if not need to generate vq code
       if d == depth_high and vqvae == None:
         break
-
+      
+      start_temperature = self.start_temperature * (0.8 ** (d - depth_low))
       # get depth index
       depth_idx = self.get_depth_index(octree, depth_low, d)
       nnum_d = octree.nnum[d]
 
       mask = torch.ones(nnum_d, device=octree.device).bool()
       if d < depth_high:
-        split = -1 * torch.ones(nnum_d, device=octree.device)
+        split = -1 * torch.ones(nnum_d, device=octree.device).long()
       else:
         vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
       token_embedding_d = cond.repeat(nnum_d, 1)
@@ -230,7 +231,7 @@ class MAR(nn.Module):
               mask.bool(), mask_next.bool())
         mask = mask_next
 
-        temperature = self.start_temperature * \
+        temperature = start_temperature * \
             ((self.num_iters - i) / self.num_iters)
 
         if d < depth_high:
@@ -241,7 +242,7 @@ class MAR(nn.Module):
         else:
           vq_logits = self.vq_head(x[mask_to_pred])
           if self.vq_name == "vqvae":
-            ix = sample(vq_logits, temperature=temperature)
+            ix = sample(vq_logits, top_k=5, temperature=temperature)
             with torch.no_grad():
               zq = vqvae.quantizer.embedding(ix)
               vq_code[mask_to_pred] = zq
@@ -252,9 +253,7 @@ class MAR(nn.Module):
 
       token_embeddings = torch.cat(
           [token_embeddings, token_embedding_d], dim=0)
-
       if d < depth_high:
-        split = split.long()
         octree = seq2octree(octree, split, d, d + 1)
         # utils.export_octree(
         # octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())

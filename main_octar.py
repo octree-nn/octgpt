@@ -13,6 +13,7 @@ from models.gpt import GPT
 from models.mar import MAR
 from datasets import get_shapenet_dataset
 from tqdm import tqdm
+import copy
 os.environ['TORCH_NCCL_BLOCKING_WAIT'] = '1'
 
 
@@ -129,8 +130,8 @@ class OctarSolver(Solver):
     self.load_checkpoint()
     self.model.eval()
     for iter in tqdm(range(10000), ncols=80):
-      # self.generate_step(iter)
-      self.generate_vq_step(iter)
+      self.generate_step(iter)
+      # self.generate_vq_step(iter)
 
   def export_results(self, octree_out, index, vq_code=None):
     # export the octree
@@ -148,7 +149,7 @@ class OctarSolver(Solver):
       doctree_out = OctreeD(octree_out)
       with torch.no_grad():
         output = self.vqvae_module.decode_code(
-            vq_code, self.depth_stop, doctree_out, update_octree=True)
+            vq_code, self.depth_stop, doctree_out, copy.deepcopy(doctree_out), update_octree=True)
 
       # extract the mesh
       utils.create_mesh(

@@ -456,8 +456,8 @@ def sample(logits, top_k=None, top_p=None, temperature=1.0):
 
     sorted_indices_to_remove = cumulative_probs > top_p
 
-    sorted_indices_to_remove[...,
-                             1:] = sorted_indices_to_remove[..., :-1].clone()
+    sorted_indices_to_remove[..., 1:] = \
+        sorted_indices_to_remove[..., :-1].clone()
     sorted_indices_to_remove[..., 0] = False
 
     indices_to_remove = sorted_indices_to_remove.scatter(
