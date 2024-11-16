@@ -1,6 +1,7 @@
 import torch
 import ocnn
 import ognn
+import torch.nn.functional as F
 
 from typing import List, Optional
 from ocnn.octree import Octree
@@ -178,6 +179,143 @@ class Decoder(torch.nn.Module):
     return output
 
 
+class VectorQuantizer(torch.nn.Module):
+
+  def __init__(self, K: int, D: int, beta: float = 0.5):
+    super().__init__()
+    self.beta = beta
+    self.embedding = torch.nn.Embedding(K, D)
+    self.embedding.weight.data.uniform_(-1.0 / K, 1.0 / K)
+
+  def forward(self, z: torch.Tensor):
+    # compute distances from z to embeddings e,
+    # z: (N, D), e: (K, D)
+    # (z - e)^2 = z^2 + e^2 - 2 e * z
+    d = (torch.sum(z**2, dim=1, keepdim=True) +
+         torch.sum(self.embedding.weight**2, dim=1) -
+         2 * torch.matmul(z, self.embedding.weight.T))
+
+    # get the closest embedding indices
+    indices = torch.argmin(d, dim=1)
+
+    # get the embeddings
+    zq = self.embedding(indices)
+
+    # compute loss for the embedding
+    loss = (self.beta * torch.mean((zq.detach() - z)**2) +
+                        torch.mean((zq - z.detach())**2))  # noqa
+
+    # preserve gradients: Straight-Through gradients
+    zq = z + (zq - z).detach()
+    return zq, indices, loss
+
+
+class VectorQuantizerN(torch.nn.Module):
+
+  def __init__(self, K: int, D: int, beta: float = 0.5):
+    super().__init__()
+    self.beta = beta
+    self.embedding = torch.nn.Embedding(K, D)
+    self.embedding.weight.data.uniform_(-1.0 / K, 1.0 / K)
+
+  def forward(self, z: torch.Tensor):
+    # compute distances from z to embeddings e
+    z = F.normalize(z, dim=1)
+    d = z @ F.normalize(self.embedding.weight.data, dim=1).T
+    indices = torch.argmax(d, dim=1)
+
+    # get the normalized embeddings
+    zq = self.embedding(indices)
+    zq = F.normalize(zq, dim=1)
+
+    # compute loss for the embedding
+    loss = (self.beta * torch.mean((zq.detach() - z)**2) +
+                        torch.mean((zq - z.detach())**2))  # noqa
+
+    # preserve gradients: Straight-Through gradients
+    zq = z + (zq - z).detach()
+    return zq, indices, loss
+
+
+class VectorQuantizerP(torch.nn.Module):
+
+  def __init__(self, K: int, D: int, beta: float = 0.5):
+    super().__init__()
+    self.beta = beta
+    self.proj = torch.nn.Linear(D, D)
+    self.embedding = torch.nn.Embedding(K, D)
+    self.embedding.weight.data.uniform_(-1.0 / K, 1.0 / K)
+
+  def forward(self, z):
+    # compute distances from z to embeddings e,
+    # z: (N, D), e: (K, D)
+    # (z - e)^2 = z^2 + e^2 - 2 e * z
+    codebook = self.proj(self.embedding.weight)
+    d = (torch.sum(z**2, dim=1, keepdim=True) +
+         torch.sum(codebook**2, dim=1) -
+         2 * torch.matmul(z, codebook.T))
+
+    # get the closest embedding indices
+    indices = torch.argmin(d, dim=1)
+
+    # get the embeddings
+    zq = torch.nn.functional.embedding(indices, codebook)
+
+    # compute loss for the embedding
+    loss = (self.beta * torch.mean((zq.detach() - z)**2) +
+                        torch.mean((zq - z.detach())**2))  # noqa
+
+    # preserve gradients: Straight-Through gradients
+    zq = z + (zq - z).detach()
+    return zq, indices, loss
+
+
+class VectorQuantizerG(torch.nn.Module):
+
+  def __init__(self, K: int, D: int, beta: float = 0.5, G: int = 4):
+    super().__init__()
+    C = D // G
+    self.groups = G
+    self.channels_per_group = C
+    self.quantizers = torch.nn.ModuleList([
+        VectorQuantizer(K, C, beta) for _ in range(G)])
+
+  def forward(self, z):
+    zqs = [None] * self.groups
+    losses = [None] * self.groups
+    z = z.view(-1, self.groups, self.channels_per_group)
+    for i in range(self.groups):
+      zqs[i], losses[i] = self.quantizers[i](z[:, i])
+    zq = torch.cat(zqs, dim=1)
+    loss = torch.mean(torch.stack(losses))
+    return zq, loss
+
+
+class DiagonalGaussian(object):
+
+  def __init__(self, parameters: torch.Tensor):
+    super().__init__()
+    self.parameters = parameters
+    self.device = parameters.device
+
+    self.mean, self.logvar = torch.chunk(parameters, 2, dim=1)
+    self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
+    self.std = torch.exp(0.5 * self.logvar)
+    self.var = torch.exp(self.logvar)
+
+  def sample(self):
+    x = self.mean + self.std * torch.randn(self.mean.shape, device=self.device)
+    return x
+
+  def kl(self, other: Optional['DiagonalGaussian'] = None):
+    if other is None:
+      out = 0.5 * (torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar)
+    else:
+      out = 0.5 * (torch.pow(self.mean - other.mean, 2) / other.var +
+                   self.var / other.var - 1.0 - self.logvar + other.logvar)
+    return out
+
+
 class VQVAE(torch.nn.Module):
 
   def __init__(self, in_channels: int,
@@ -249,91 +387,6 @@ class VQVAE(torch.nn.Module):
     return output
 
 
-class VectorQuantizer(torch.nn.Module):
-
-  def __init__(self, K: int, D: int, beta: float = 0.5):
-    super().__init__()
-    self.beta = beta
-    self.embedding = torch.nn.Embedding(K, D)
-    self.embedding.weight.data.uniform_(-1.0 / K, 1.0 / K)
-
-  def forward(self, z: torch.Tensor):
-    # compute distances from z to embeddings e,
-    # z: (N, D), e: (K, D)
-    # (z - e)^2 = z^2 + e^2 - 2 e * z
-    d = (torch.sum(z**2, dim=1, keepdim=True) +
-         torch.sum(self.embedding.weight**2, dim=1) -
-         2 * torch.matmul(z, self.embedding.weight.T))
-
-    # get the closest embedding indices
-    indices = torch.argmin(d, dim=1)
-
-    # get the embeddings
-    zq = self.embedding(indices)
-
-    # compute loss for the embedding
-    loss = (self.beta * torch.mean((zq.detach() - z)**2) +
-                        torch.mean((zq - z.detach())**2))  # noqa
-
-    # preserve gradients: Straight-Through gradients
-    zq = z + (zq - z).detach()
-    return zq, indices, loss
-
-
-class VectorQuantizerP(torch.nn.Module):
-
-  def __init__(self, K: int, D: int, beta: float = 0.5):
-    super().__init__()
-    self.beta = beta
-    self.proj = torch.nn.Linear(D, D)
-    self.embedding = torch.nn.Embedding(K, D)
-    self.embedding.weight.data.uniform_(-1.0 / K, 1.0 / K)
-
-  def forward(self, z):
-    # compute distances from z to embeddings e,
-    # z: (N, D), e: (K, D)
-    # (z - e)^2 = z^2 + e^2 - 2 e * z
-    codebook = self.proj(self.embedding.weight)
-    d = (torch.sum(z**2, dim=1, keepdim=True) +
-         torch.sum(codebook**2, dim=1) -
-         2 * torch.matmul(z, codebook.T))
-
-    # get the closest embedding indices
-    indices = torch.argmin(d, dim=1)
-
-    # get the embeddings
-    zq = torch.nn.functional.embedding(indices, codebook)
-
-    # compute loss for the embedding
-    loss = (self.beta * torch.mean((zq.detach() - z)**2) +
-                        torch.mean((zq - z.detach())**2))  # noqa
-
-    # preserve gradients: Straight-Through gradients
-    zq = z + (zq - z).detach()
-    return zq, indices, loss
-
-
-class VectorQuantizerG(torch.nn.Module):
-
-  def __init__(self, K: int, D: int, beta: float = 0.5, G: int = 4):
-    super().__init__()
-    C = D // G
-    self.groups = G
-    self.channels_per_group = C
-    self.quantizers = torch.nn.ModuleList([
-        VectorQuantizer(K, C, beta) for _ in range(G)])
-
-  def forward(self, z):
-    zqs = [None] * self.groups
-    losses = [None] * self.groups
-    z = z.view(-1, self.groups, self.channels_per_group)
-    for i in range(self.groups):
-      zqs[i], losses[i] = self.quantizers[i](z[:, i])
-    zq = torch.cat(zqs, dim=1)
-    loss = torch.mean(torch.stack(losses))
-    return zq, loss
-
-
 class VAE(VQVAE):
 
   def __init__(self, in_channels: int,
@@ -355,31 +408,6 @@ class VAE(VQVAE):
     output = self.decode_code(z, code_depth, octree_in, octree_out,
                               pos, update_octree)
     output['vae_loss'] = posterior.kl().mean()
-    output['code_max'] = z.max()
-    output['code_min'] = z.min()
+    # output['code_max'] = z.max()
+    # output['code_min'] = z.min()
     return output
-
-
-class DiagonalGaussian(object):
-
-  def __init__(self, parameters: torch.Tensor):
-    super().__init__()
-    self.parameters = parameters
-    self.device = parameters.device
-
-    self.mean, self.logvar = torch.chunk(parameters, 2, dim=1)
-    self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
-    self.std = torch.exp(0.5 * self.logvar)
-    self.var = torch.exp(self.logvar)
-
-  def sample(self):
-    x = self.mean + self.std * torch.randn(self.mean.shape, device=self.device)
-    return x
-
-  def kl(self, other: Optional['DiagonalGaussian'] = None):
-    if other is None:
-      out = 0.5 * (torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar)
-    else:
-      out = 0.5 * (torch.pow(self.mean - other.mean, 2) / other.var +
-                   self.var / other.var - 1.0 - self.logvar + other.logvar)
-    return out
