@@ -117,7 +117,9 @@ class ReadFile:
 
     # load the target sdfs and gradients
     if self.flags.get('load_sdf'):
-      filename_sdf = os.path.join(filename, 'sdf.npz')
+      num = self.flags.get('sdf_file_num', 0)
+      name = 'sdf_%d.npz' % np.random.randint(num) if num > 0 else 'sdf.npz'
+      filename_sdf = os.path.join(filename, name)
       raw = np.load(filename_sdf)
       sdf = {'points': raw['points'], 'grad': raw['grad'], 'sdf': raw['sdf']}
       output['sdf'] = sdf

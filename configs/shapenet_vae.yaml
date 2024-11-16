@@ -36,10 +36,11 @@ DATA:
     distort: False
 
     # data loading
-    location: &location data/ShapeNet/dataset_10w
+    location: &location data/ShapeNet/dataset_new
     filelist: data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: True
     load_sdf: True
+    sdf_file_num: 8
     batch_size: 2
     shuffle: True
 
@@ -64,6 +65,7 @@ DATA:
     batch_size: 1
     load_pointcloud: True
     load_sdf: True
+    sdf_file_num: 8
     shuffle: False
 
 
