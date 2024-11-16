@@ -1,6 +1,7 @@
 import torch
 import ocnn
 import ognn
+import torch.nn.functional as F
 
 from typing import List, Optional
 from ocnn.octree import Octree
@@ -270,6 +271,33 @@ class VectorQuantizer(torch.nn.Module):
 
     # get the embeddings
     zq = self.embedding(indices)
+
+    # compute loss for the embedding
+    loss = (self.beta * torch.mean((zq.detach() - z)**2) +
+                        torch.mean((zq - z.detach())**2))  # noqa
+
+    # preserve gradients: Straight-Through gradients
+    zq = z + (zq - z).detach()
+    return zq, indices, loss
+
+
+class VectorQuantizerN(torch.nn.Module):
+
+  def __init__(self, K: int, D: int, beta: float = 0.5):
+    super().__init__()
+    self.beta = beta
+    self.embedding = torch.nn.Embedding(K, D)
+    self.embedding.weight.data.uniform_(-1.0 / K, 1.0 / K)
+
+  def forward(self, z: torch.Tensor):
+    # compute distances from z to embeddings e
+    z = F.normalize(z, dim=1)
+    d = z @ F.normalize(self.embedding.weight.data, dim=1).T
+    indices = torch.argmax(d, dim=1)
+
+    # get the normalized embeddings
+    zq = self.embedding(indices)
+    zq = F.normalize(zq, dim=1)
 
     # compute loss for the embedding
     loss = (self.beta * torch.mean((zq.detach() - z)**2) +
