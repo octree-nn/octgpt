@@ -12,16 +12,15 @@ import ocnn
 from ocnn.octree import Octree
 from typing import Optional
 from torch.utils.checkpoint import checkpoint
-
-FULL_DEPTH = 3
-MAX_DEPTH = 6
+from models.positional_embedding import RotaryPosEmb, SinPosEmb, OctreeConvPosEmb
 
 
 class OctreeT(Octree):
 
-  def __init__(self, octree: Octree, data_length: int, patch_size: int = 24, dilation: int = 4,
-               nempty: bool = True, group_idx: Optional[torch.Tensor] = None, max_depth: Optional[int] = None,
-               start_depth: Optional[int] = None, **kwargs):
+  def __init__(self, octree: Octree, data_length: int, patch_size: int = 24, 
+               dilation: int = 4, nempty: bool = True, 
+               group_idx: Optional[torch.Tensor] = None, 
+               max_depth: Optional[int] = None, start_depth: Optional[int] = None, **kwargs):
     super().__init__(octree.depth, octree.full_depth)
     self.__dict__.update(octree.__dict__)
 
@@ -181,108 +180,13 @@ class RPE(torch.nn.Module):
         self.num_heads, self.pos_bnd, self.dilation)    # noqa
 
 
-class SinPosEmb(torch.nn.Module):
-  def __init__(self, num_embed: int, full_depth: int = FULL_DEPTH, max_depth: int = MAX_DEPTH):
-    super().__init__()
-    self.num_embed = num_embed
-    self.max_depth = max_depth
-    self.full_depth = full_depth
-    self.max_scale = 2 ** (self.max_depth + 1)
-
-    self.depth_emb = torch.nn.Embedding(
-        self.max_depth - self.full_depth + 1, num_embed)
-
-  def rescale_pos(self, x, scale):
-    x = x * self.max_scale // scale
-    x += self.max_scale // scale // 2
-    return x
-
-  def get_emb(self, sin_inp):
-    """
-    Gets a base embedding for one dimension with sin and cos intertwined
-    """
-    emb = torch.stack((sin_inp.sin(), sin_inp.cos()), dim=-1)
-    return torch.flatten(emb, -2, -1)
-
-  def get_3d_pos_emb(self, pos_x, pos_y, pos_z):
-    device = pos_x.device
-
-    channels = int(np.ceil(self.num_embed / 6) * 2)
-    if channels % 2:
-      channels += 1
-
-    inv_freq = 1.0 / (10000 ** (torch.arange(0, channels,
-                      2, device=device).float() / channels))
-
-    sin_inp_x = torch.einsum("i,j->ij", pos_x, inv_freq)
-    sin_inp_y = torch.einsum("i,j->ij", pos_y, inv_freq)
-    sin_inp_z = torch.einsum("i,j->ij", pos_z, inv_freq)
-    emb_x = self.get_emb(sin_inp_x)
-    emb_y = self.get_emb(sin_inp_y)
-    emb_z = self.get_emb(sin_inp_z)
-    emb = torch.zeros(
-        (pos_x.shape[0], channels * 3),
-        device=device,
-    )
-    emb[:, : channels] = emb_x
-    emb[:, channels: 2 * channels] = emb_y
-    emb[:, 2 * channels:] = emb_z
-
-    return emb[:, :self.num_embed]
-
-  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int):
-    position_embeddings = []
-    for d in range(depth_low, depth_high + 1):
-      scale = 2 ** d
-      x, y, z, b = octree.xyzb(d)
-      x = self.rescale_pos(x, scale)
-      y = self.rescale_pos(y, scale)
-      z = self.rescale_pos(z, scale)
-
-      pos_emb_d = self.get_3d_pos_emb(x, y, z)
-      depth_emb_d = self.depth_emb(torch.tensor(
-          [d - self.full_depth], device=octree.device))
-      position_embeddings.append(pos_emb_d + depth_emb_d)
-    position_embeddings = torch.cat(position_embeddings, dim=0)
-    return position_embeddings
-
-
-class OctreeConvPosEmb(torch.nn.Module):
-  def __init__(self, num_embed: int, full_depth: int = FULL_DEPTH, max_depth: int = MAX_DEPTH, groups: int = 32, nempty: bool = False):
-    super().__init__()
-    self.full_depth = full_depth
-    self.max_depth = max_depth
-    self.conv = torch.nn.ModuleList([
-        ocnn.modules.OctreeConvGnRelu(
-            in_channels=num_embed, out_channels=num_embed, group=groups, nempty=nempty)
-        for i in range(max_depth - full_depth + 1)])
-    self.depth_emb = torch.nn.Embedding(
-        self.max_depth - self.full_depth + 1, num_embed)
-
-  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int):
-    position_embeddings = []
-    cur_seq_len = 0
-    for d in range(depth_low, depth_high + 1):
-      nnum_d = octree.nnum[d]
-      # clone the data to avoid in-place operation
-      data_d = data[cur_seq_len:cur_seq_len + nnum_d].clone()
-      pos_emb_d = self.conv[d - depth_low](data_d, octree, d)
-      depth_emb_d = self.depth_emb(torch.tensor(
-          [d - self.full_depth], device=octree.device))
-      position_embeddings.append(pos_emb_d + depth_emb_d)
-      cur_seq_len += nnum_d
-      if cur_seq_len >= data.shape[0]:
-        break
-    position_embeddings = torch.cat(position_embeddings, dim=0)
-    return position_embeddings
-
-
 class OctreeAttention(torch.nn.Module):
 
   def __init__(self, dim: int, patch_size: int, num_heads: int,
                qkv_bias: bool = True, qk_scale: Optional[float] = None,
                attn_drop: float = 0.0, proj_drop: float = 0.0,
-               dilation: int = 1, use_rpe: bool = False, use_flash: bool = True):
+               dilation: int = 1, use_rpe: bool = False, use_flash: bool = True,
+               use_rope: bool = True):
     super().__init__()
     self.dim = dim
     self.patch_size = patch_size
@@ -290,6 +194,7 @@ class OctreeAttention(torch.nn.Module):
     self.dilation = dilation
     self.use_rpe = use_rpe
     self.use_flash = use_flash
+    self.use_rope = use_rope
     self.scale = qk_scale or (dim // num_heads) ** -0.5
 
     self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
@@ -307,6 +212,8 @@ class OctreeAttention(torch.nn.Module):
     # 0.3 to 0.5; on the other datasets, the improvements are more marginal. So
     # it is not indispensible, and can be removed by setting `use_rpe` as False.
     self.rpe = RPE(patch_size, num_heads, dilation) if use_rpe else None
+    if self.use_rope:
+      self.rope = RotaryPosEmb(dim=dim, num_heads=num_heads, rope_mixed=True)
 
   def forward(self, data: torch.Tensor, octree: OctreeT, layer_past=None):
     H = self.num_heads
@@ -319,19 +226,11 @@ class OctreeAttention(torch.nn.Module):
       mask = octree.dilate_mask
       if octree.dilate_tf_mask is not None:
         mask += octree.dilate_tf_mask
-      else:
-        tf_mask = torch.tril(
-            torch.ones(K, K, device=data.device)).unsqueeze(0)
-        mask = mask.masked_fill(tf_mask == 0, -1e3)
     else:
       # rel_pos = octree.rel_pos
       mask = octree.patch_mask
       if octree.patch_tf_mask is not None:
         mask += octree.patch_tf_mask
-      else:
-        tf_mask = torch.tril(
-            torch.ones(K, K, device=data.device)).unsqueeze(0)
-        mask = mask.masked_fill(tf_mask == 0, -1e3)
     mask = mask.float()
 
     def patchify_qkv(qkv: torch.Tensor):
@@ -355,6 +254,10 @@ class OctreeAttention(torch.nn.Module):
 
     # qkv
     qkv = self.qkv(data)
+
+    # apply rotary position embedding
+    if self.use_rope:
+      qkv = self.rope(qkv, octree)
 
     if layer_past is not None:
       data_length = data.shape[0]
@@ -439,12 +342,12 @@ class OctFormerBlock(torch.nn.Module):
     self.dropout = torch.nn.Dropout(drop_path)
     self.pos_emb = pos_emb(dim)
 
-  def forward(self, data: torch.Tensor, octree: OctreeT, depth_low: int, depth_high: int, layer_past=None):
+  def forward(self, data: torch.Tensor, octree: OctreeT, layer_past=None):
     if layer_past is not None:
-      pe = self.pos_emb(data, octree, depth_low, depth_high)[
+      pe = self.pos_emb(data, octree)[
           layer_past.shape[0]:octree.nnum_t]
     else:
-      pe = self.pos_emb(data, octree, depth_low, depth_high)[:octree.nnum_t]
+      pe = self.pos_emb(data, octree)[:octree.nnum_t]
     data = pe + data
     attn, layer_present = self.attention(
         self.norm1(data), octree, layer_past)
@@ -483,16 +386,16 @@ class OctFormerStage(torch.nn.Module):
     # self.norms = torch.nn.ModuleList([
     #         torch.nn.BatchNorm1d(dim) for _ in range(self.num_norms)])
 
-  def forward(self, data: torch.Tensor, octree: OctreeT, depth_low: int, depth_high: int, past=None):
+  def forward(self, data: torch.Tensor, octree: OctreeT, past=None):
     presents = []
     for i in range(self.num_blocks):
       layer_past = past[i] if past is not None else None
       if self.use_checkpoint and self.training:
         data, layer_present = checkpoint(
-            self.blocks[i], data, octree, depth_low, depth_high, layer_past, use_reentrant=False)
+            self.blocks[i], data, octree, layer_past, use_reentrant=False)
       else:
         data, layer_present = self.blocks[i](
-            data, octree, depth_low, depth_high, layer_past)
+            data, octree, layer_past)
       presents.append(layer_present)
       # if i % self.interval == 0 and i != 0:
       #     data = self.norms[(i - 1) // self.interval](data)
@@ -515,7 +418,6 @@ class OctFormer(torch.nn.Module):
     self.dilation = dilation
     self.nempty = nempty
 
-    # self.patch_embed = ocnn.modules.OctreeConvBnRelu(in_channels, channels, kernel_size=[3], stride=1, nempty=nempty)
     self.layers = OctFormerStage(
         dim=channels, num_heads=num_heads, patch_size=patch_size,
         # drop_path=torch.linspace(0, drop_path, num_blocks).tolist(),
@@ -529,5 +431,5 @@ class OctFormer(torch.nn.Module):
         past.shape[1] if past is not None else data.shape[0]
     octree = OctreeT(octree, data_length, self.patch_size, self.dilation,
                      self.nempty, group_idx=group_idx, max_depth=depth_high, start_depth=depth_low)
-    data, presents = self.layers(data, octree, depth_low, depth_high, past)
+    data, presents = self.layers(data, octree, past)
     return data, presents

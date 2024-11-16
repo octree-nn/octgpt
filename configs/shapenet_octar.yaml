@@ -94,7 +94,7 @@ MODEL:
     feature: ND
   
   GPT:
-    num_embed: 256
+    num_embed: 384
     num_heads: 8
     num_blocks: 16
     num_classes: 1
@@ -103,7 +103,7 @@ MODEL:
     patch_size: 4096
     dilation: 2
     drop_rate: 0.1
-    pos_emb_type: OctreeConvPosEmb
+    pos_emb_type: SinPosEmb
     use_checkpoint: True
     mask_ratio_min: 0.7
     start_temperature: 1.0

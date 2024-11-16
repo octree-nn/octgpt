@@ -44,13 +44,12 @@ class MAR(nn.Module):
     self.num_iters = num_iters
     self.vq_name = vae_name
 
-    self.pos_emb = eval(pos_emb_type)(num_embed)
+    # self.pos_emb = eval(pos_emb_type)(num_embed)
 
     self.split_emb = nn.Embedding(split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
     self.vq_proj = nn.Linear(num_vq_embed, num_embed)
 
-    self.drop = nn.Dropout(drop_rate)
     self.blocks = OctFormer(
         channels=num_embed, num_blocks=num_blocks, num_heads=num_heads,
         patch_size=patch_size, dilation=dilation, attn_drop=drop_rate,
@@ -130,15 +129,14 @@ class MAR(nn.Module):
     mask = self.random_masking(seq_len, orders).bool()
     x_token_embeddings[mask] = cond
     # positional embedding
-    position_embeddings = self.pos_emb(
-        x_token_embeddings, octree_in, depth_low, depth_high)  # S x C
-    x = x_token_embeddings + position_embeddings[:seq_len]
+    # position_embeddings = self.pos_emb(
+    #     x_token_embeddings, octree_in)  # S x C
+    # x = x_token_embeddings + position_embeddings[:seq_len]
 
     # get depth index
     depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
 
-    x = self.drop(x)
-    x, presents = self.blocks(x, octree_in, depth_low,
+    x, presents = self.blocks(x_token_embeddings, octree_in, depth_low,
                               depth_high, past=None, group_idx=depth_idx)
     x = self.ln_x(x)
 
@@ -203,10 +201,9 @@ class MAR(nn.Module):
 
       for i in tqdm(range(self.num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
-        position_embeddings = self.pos_emb(
-            x, octree, depth_low, d)  # S x C
-        x = x + position_embeddings[:x.shape[0], :]
-        x = self.drop(x)
+        # position_embeddings = self.pos_emb(
+        #     x, octree, depth_low, d)  # S x C
+        # x = x + position_embeddings[:x.shape[0], :]
         x, _ = self.blocks(x, octree, depth_low, d,
                            group_idx=depth_idx)  # B x S x C
         x = x[-nnum_d:, :]
