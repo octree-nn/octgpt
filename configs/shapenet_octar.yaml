@@ -4,8 +4,7 @@ SOLVER:
 
   logdir: logs/shapenet_vae/vae
   max_epoch: 200
-  test_every_epoch: 1
-  generate_every_epoch: 20
+  test_every_epoch: 5
   log_per_iter: 50
   ckpt_num: 5
   port: 20001
@@ -42,7 +41,7 @@ DATA:
     distort: &distort False
 
     # data loading
-    location: &location data/ShapeNet/dataset_256
+    location: &location data/ShapeNet/dataset_new
     filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
@@ -66,7 +65,7 @@ DATA:
 
     # data loading
     location: *location
-    filelist: *filelist
+    filelist: data/ShapeNet/filelist/test_airplane.txt
     batch_size: 1
     load_pointcloud: *load_pointcloud
     load_sdf: *load_sdf
@@ -94,7 +93,7 @@ MODEL:
     feature: ND
   
   GPT:
-    num_embed: 384
+    num_embed: 768
     num_heads: 8
     num_blocks: 16
     num_classes: 1

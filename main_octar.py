@@ -9,7 +9,7 @@ from utils import utils, builder
 from utils.distributed import get_rank
 # from models.vqvae import VQVAE
 from models.vae import VQVAE
-from models.gpt import GPT
+from models.legacy.gpt import GPT
 from models.mar import MAR
 from datasets import get_shapenet_dataset
 from tqdm import tqdm
@@ -116,10 +116,8 @@ class OctarSolver(Solver):
     return output
 
   def test_epoch(self, epoch):
-    # super().test_epoch(epoch)
+    super().test_epoch(epoch)
     # generate the mesh
-    if epoch % self.FLAGS.SOLVER.generate_every_epoch != 0:
-      return
     self.generate_step(epoch)
 
   def generate(self):
