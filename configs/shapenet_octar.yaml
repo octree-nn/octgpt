@@ -12,11 +12,11 @@ SOLVER:
   # optimizer
   type: adamw
   weight_decay: 0.01  # default value of adamw
-  lr: 0.001           # default value of adamw
-  rand_seed: 0
+  lr: 0.0001           # default value of adamw
+  # rand_seed: 0
 
   # learning rate
-  lr_type: poly
+  lr_type: constant
   step_size: (160,240)
 
   # sdf
