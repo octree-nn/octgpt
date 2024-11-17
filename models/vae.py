@@ -181,7 +181,7 @@ class Decoder(torch.nn.Module):
 
 class VectorQuantizer(torch.nn.Module):
 
-  def __init__(self, K: int, D: int, beta: float = 0.5):
+  def __init__(self, K: int, D: int, beta: float = 0.5, **kwargs):
     super().__init__()
     self.beta = beta
     self.embedding = torch.nn.Embedding(K, D)
@@ -212,7 +212,7 @@ class VectorQuantizer(torch.nn.Module):
 
 class VectorQuantizerN(torch.nn.Module):
 
-  def __init__(self, K: int, D: int, beta: float = 0.5):
+  def __init__(self, K: int, D: int, beta: float = 0.5, **kwargs):
     super().__init__()
     self.beta = beta
     self.embedding = torch.nn.Embedding(K, D)
@@ -239,7 +239,7 @@ class VectorQuantizerN(torch.nn.Module):
 
 class VectorQuantizerP(torch.nn.Module):
 
-  def __init__(self, K: int, D: int, beta: float = 0.5):
+  def __init__(self, K: int, D: int, beta: float = 0.5, **kwargs):
     super().__init__()
     self.beta = beta
     self.proj = torch.nn.Linear(D, D)
@@ -272,13 +272,13 @@ class VectorQuantizerP(torch.nn.Module):
 
 class VectorQuantizerG(torch.nn.Module):
 
-  def __init__(self, K: int, D: int, beta: float = 0.5, G: int = 4):
+  def __init__(self, K: int, D: int, beta: float = 0.5, G: int = 4,
+               Q: torch.nn.Module = VectorQuantizer, **kwargs):
     super().__init__()
-    C = D // G
+    C = D // G  # channel per group
     self.groups = G
     self.channels_per_group = C
-    self.quantizers = torch.nn.ModuleList([
-        VectorQuantizer(K, C, beta) for _ in range(G)])
+    self.quantizers = torch.nn.ModuleList([Q(K, C, beta) for _ in range(G)])
 
   def forward(self, z):
     zqs = [None] * self.groups
@@ -296,7 +296,6 @@ class DiagonalGaussian(object):
   def __init__(self, parameters: torch.Tensor):
     super().__init__()
     self.parameters = parameters
-    self.device = parameters.device
 
     self.mean, self.logvar = torch.chunk(parameters, 2, dim=1)
     self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
@@ -304,7 +303,7 @@ class DiagonalGaussian(object):
     self.var = torch.exp(self.logvar)
 
   def sample(self):
-    x = self.mean + self.std * torch.randn(self.mean.shape, device=self.device)
+    x = self.mean + self.std * torch.randn_like(self.mean)
     return x
 
   def kl(self, other: Optional['DiagonalGaussian'] = None):
@@ -322,7 +321,10 @@ class VQVAE(torch.nn.Module):
                embedding_sizes: int = 128,
                embedding_channels: int = 64,
                feature: str = 'ND',
-               n_node_type: int = 7, **kwargs):
+               n_node_type: int = 7,
+               quantizer_type: str = 'plain',
+               quantizer_group: int = 4,
+               **kwargs):
     super().__init__()
     self.feature = feature
     self.config_network()
@@ -333,7 +335,8 @@ class VQVAE(torch.nn.Module):
         n_node_type, self.dec_enc_channels, self.dec_enc_resblk_nums,
         self.dec_dec_channels, self.dec_dec_resblk_nums, self.mpu_stage_nums,
         self.pred_stage_nums, self.bottleneck)
-    self.quantizer = VectorQuantizer(embedding_sizes, embedding_channels)
+    self.quantizer = self.get_quantizer(
+        quantizer_type, embedding_sizes, embedding_channels, quantizer_group)
 
     self.pre_proj = torch.nn.Linear(
         self.enc_channels[-1], embedding_channels, bias=True)
@@ -352,6 +355,25 @@ class VQVAE(torch.nn.Module):
     self.dec_enc_resblk_nums = [1, 2, 4, 2]
     self.dec_dec_channels = [256, 128, 64, 32, 32, 32]
     self.dec_dec_resblk_nums = [2, 4, 2, 2, 1, 1]
+
+  def get_quantizer(self, quantizer_type: str, embedding_sizes: int,
+                    embedding_channels: int, group: int = 4):
+    kwargs = {'K': embedding_sizes, 'D': embedding_channels, 'G': group}
+
+    if 'plain' in quantizer_type:
+      Quantizer = VectorQuantizer
+    elif 'project' in quantizer_type:
+      Quantizer = VectorQuantizerP
+    elif 'normalize' in quantizer_type:
+      Quantizer = VectorQuantizerN
+    else:
+      raise NotImplementedError
+
+    if 'group' in quantizer_type:
+      kwargs['Q'] = Quantizer
+      Quantizer = VectorQuantizerG
+
+    return Quantizer(**kwargs)
 
   def forward(self, octree_in: Octree, octree_out: OctreeD,
               pos: torch.Tensor = None, update_octree: bool = False):

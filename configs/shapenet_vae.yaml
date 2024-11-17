@@ -75,6 +75,7 @@ MODEL:
   in_channels: 4
   embedding_sizes: 128
   embedding_channels: 256
+  quantizer_type: plain
   feature: ND
 
 
