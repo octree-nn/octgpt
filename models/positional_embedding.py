@@ -211,9 +211,13 @@ class SinPosEmb(torch.nn.Module):
 
     return emb[:, :self.num_embed]
 
-  def forward(self, data: torch.Tensor, octree: Octree):
+  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int = None, depth_high: int = None):
     position_embeddings = []
-    for d in range(octree.start_depth, octree.max_depth + 1):
+    if depth_low is None:
+      depth_low = octree.start_depth
+    if depth_high is None:
+      depth_high = octree.max_depth
+    for d in range(depth_low, depth_high + 1):
       scale = 2 ** d
       x, y, z, b = octree.xyzb(d)
       x = self.rescale_pos(x, scale)
@@ -240,14 +244,18 @@ class OctreeConvPosEmb(torch.nn.Module):
     self.depth_emb = torch.nn.Embedding(
         self.max_depth - self.full_depth + 1, num_embed)
 
-  def forward(self, data: torch.Tensor, octree: Octree):
+  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int = None, depth_high: int = None):
     position_embeddings = []
     cur_seq_len = 0
-    for d in range(octree.start_depth, octree.max_depth + 1):
+    if depth_low is None:
+      depth_low = octree.start_depth
+    if depth_high is None:
+      depth_high = octree.max_depth
+    for d in range(depth_low, depth_high + 1):
       nnum_d = octree.nnum[d]
       # clone the data to avoid in-place operation
       data_d = data[cur_seq_len:cur_seq_len + nnum_d].clone()
-      pos_emb_d = self.conv[d - octree.start_depth](data_d, octree, d)
+      pos_emb_d = self.conv[d - depth_low](data_d, octree, d)
       depth_emb_d = self.depth_emb(torch.tensor(
           [d - self.full_depth], device=octree.device))
       position_embeddings.append(pos_emb_d + depth_emb_d)
@@ -265,8 +273,12 @@ class DepthPosEmb(torch.nn.Module):
     self.depth_emb = torch.nn.Embedding(
         self.max_depth - self.full_depth + 1, num_embed)
 
-  def forward(self, data: torch.Tensor, octree: Octree):
+  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int = None, depth_high: int = None):
     depth_embedding = []
+    if depth_low is None:
+      depth_low = octree.start_depth
+    if depth_high is None:
+      depth_high = octree.max_depth
     for d in range(octree.start_depth, octree.max_depth + 1):
       nnum_d = octree.nnum[d]
       # clone the data to avoid in-place operation

@@ -186,7 +186,7 @@ class OctreeAttention(torch.nn.Module):
                qkv_bias: bool = True, qk_scale: Optional[float] = None,
                attn_drop: float = 0.0, proj_drop: float = 0.0,
                dilation: int = 1, use_rpe: bool = False, use_flash: bool = True,
-               use_rope: bool = True):
+               use_rope: bool = False):
     super().__init__()
     self.dim = dim
     self.patch_size = patch_size
