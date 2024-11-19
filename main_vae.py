@@ -34,7 +34,6 @@ class VAESolver(Solver):
     wg, ws, wm = 1.0, 200.0, 1.0
     flags = self.FLAGS.LOSS
     mpus = model_out['mpus']
-    # R = [(d, w) for d, w in zip(flags.mpu_keys, flags.mpu_weights) if d in mpus]
     for d in mpus:
       sdf = mpus[d]
       grad = ognn.loss.compute_gradient(sdf, batch['pos'])[:, :3]
