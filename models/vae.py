@@ -283,12 +283,14 @@ class VectorQuantizerG(torch.nn.Module):
   def forward(self, z):
     zqs = [None] * self.groups
     losses = [None] * self.groups
+    indices = [None] * self.groups
     z = z.view(-1, self.groups, self.channels_per_group)
     for i in range(self.groups):
-      zqs[i], losses[i] = self.quantizers[i](z[:, i])
+      zqs[i], indices[i], losses[i] = self.quantizers[i](z[:, i])
     zq = torch.cat(zqs, dim=1)
+    index = torch.stack(indices, dim=1)
     loss = torch.mean(torch.stack(losses))
-    return zq, loss
+    return zq, index, loss
 
 
 class DiagonalGaussian(object):
