@@ -106,11 +106,14 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
 class RotaryPosEmb(torch.nn.Module):
   """Multi-head Attention block with rotary position embeddings."""
 
-  def __init__(self, dim, num_heads, rope_theta=200.0, rope_mixed=True):
+  def __init__(self, dim, num_heads, full_depth=FULL_DEPTH, max_depth=MAX_DEPTH, rope_theta=200.0, rope_mixed=True):
     super().__init__()
     self.rope_mixed = rope_mixed
     self.dim = dim
     self.num_heads = num_heads
+    self.full_depth = full_depth
+    self.max_depth = max_depth
+    self.max_scale = 2 ** (self.max_depth + 1) #  
 
     if self.rope_mixed:
       self.compute_cis = partial(compute_mixed_cis, num_heads=self.num_heads)
@@ -124,9 +127,9 @@ class RotaryPosEmb(torch.nn.Module):
       self.compute_cis = partial(
           compute_axial_cis, dim=self.dim // self.num_heads, theta=rope_theta)
 
-  def rescale_pos(self, x, scale, max_scale):
-    x = x * max_scale // scale
-    x += max_scale // scale // 2
+  def rescale_pos(self, x, scale):
+    x = x * self.max_scale // scale
+    x += self.max_scale // scale // 2
     return x
 
   def forward(self, qkv: torch.Tensor, octree: Octree):
@@ -137,14 +140,13 @@ class RotaryPosEmb(torch.nn.Module):
     qkv = qkv.view(-1, 3, H, C // H).permute(1, 2, 0, 3)
     q, k, v = qkv[0], qkv[1], qkv[2]
 
-    max_scale = 2 ** (octree.max_depth + 1)
     freqs_cis = []
     for d in range(octree.start_depth, octree.max_depth + 1):
       scale = 2 ** d
       x, y, z, b = octree.xyzb(d)
-      x = self.rescale_pos(x, scale, max_scale)
-      y = self.rescale_pos(y, scale, max_scale)
-      z = self.rescale_pos(z, scale, max_scale)
+      x = self.rescale_pos(x, scale)
+      y = self.rescale_pos(y, scale)
+      z = self.rescale_pos(z, scale)
       xyz = torch.stack([x, y, z], dim=-1).float()
 
       if self.rope_mixed:

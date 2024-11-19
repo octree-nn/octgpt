@@ -45,7 +45,7 @@ class MAR(nn.Module):
     self.num_iters = num_iters
     self.vq_name = vae_name
 
-    self.pos_emb = eval(pos_emb_type)(num_embed)
+    # self.pos_emb = eval(pos_emb_type)(num_embed)
 
     self.split_emb = nn.Embedding(split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
@@ -132,14 +132,14 @@ class MAR(nn.Module):
     mask = self.random_masking(seq_len, orders).bool()
     x_token_embeddings[mask] = cond
     # positional embedding
-    position_embeddings = self.pos_emb(
-        x_token_embeddings, octree_in, depth_low, depth_high)  # S x C
-    x = x_token_embeddings + position_embeddings[:seq_len]
+    # position_embeddings = self.pos_emb(
+    #     x_token_embeddings, octree_in, depth_low, depth_high)  # S x C
+    # x = x_token_embeddings + position_embeddings[:seq_len]
 
     # get depth index
     depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
 
-    x = self.drop(x)
+    # x = self.drop(x)
     x, presents = self.blocks(x, octree_in, depth_low,
                               depth_high, past=None, group_idx=depth_idx)
     x = self.ln_x(x)
@@ -212,10 +212,10 @@ class MAR(nn.Module):
 
       for i in tqdm(range(self.num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
-        position_embeddings = self.pos_emb(
-            x, octree, depth_low, d)  # S x C
-        x = x + position_embeddings[:x.shape[0], :]
-        x = self.drop(x)
+        # position_embeddings = self.pos_emb(
+        #     x, octree, depth_low, d)  # S x C
+        # x = x + position_embeddings[:x.shape[0], :]
+        # x = self.drop(x)
         x, _ = self.blocks(x, octree, depth_low, d,
                            group_idx=depth_idx)  # B x S x C
         x = x[-nnum_d:, :]

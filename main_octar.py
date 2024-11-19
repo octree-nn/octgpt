@@ -129,8 +129,8 @@ class OctarSolver(Solver):
     self.model.eval()
     for iter in tqdm(range(10000), ncols=80):
       index = self.world_size * iter + get_rank()
-      # self.generate_step(index)
-      self.generate_vq_step(index)
+      self.generate_step(index)
+      # self.generate_vq_step(index)
 
   def export_results(self, octree_out, index, vq_code=None):
     # export the octree
