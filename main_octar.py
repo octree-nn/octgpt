@@ -97,7 +97,7 @@ class OctarSolver(Solver):
     output = self.model(
         octree_in=octree_in,
         depth_low=self.full_depth,
-        depth_high=self.depth_stop,
+        depth_high=self.depth_stop if self.enable_vqvae else self.depth_stop - 1,
         split=split_seq,
         vqvae=self.vqvae_module if self.enable_vqvae else None)
     losses = [val for key, val in output.items() if 'loss' in key]
@@ -118,7 +118,7 @@ class OctarSolver(Solver):
   def test_epoch(self, epoch):
     super().test_epoch(epoch)
     # generate the mesh
-    self.generate_step(epoch)
+    self.generate_step(epoch + get_rank())
 
   def generate(self):
     self.manual_seed()
@@ -128,8 +128,9 @@ class OctarSolver(Solver):
     self.load_checkpoint()
     self.model.eval()
     for iter in tqdm(range(10000), ncols=80):
-      self.generate_step(iter)
-      # self.generate_vq_step(iter)
+      index = self.world_size * iter + get_rank()
+      # self.generate_step(index)
+      self.generate_vq_step(index)
 
   def export_results(self, octree_out, index, vq_code=None):
     # export the octree
@@ -161,7 +162,6 @@ class OctarSolver(Solver):
   @torch.no_grad()
   def generate_step(self, index):
     # forward the model
-    index = self.world_size * index + get_rank()
     octree_out = ocnn.octree.init_octree(
         self.depth, self.full_depth, 1, self.device)
     octree_out, vq_code = self.model_module.generate(
@@ -179,7 +179,7 @@ class OctarSolver(Solver):
     self.batch_to_cuda(batch)
     octree_in = batch['octree_gt']
     split_seq = utils.octree2seq(
-        octree_in, self.full_depth, self.depth_stop).long()
+        octree_in, self.full_depth, self.full_depth + 1).long()
 
     octree_out, vq_code = self.model_module.generate(
         octree=octree_in,
