@@ -6,7 +6,7 @@ SOLVER:
   max_epoch: 200
   test_every_epoch: 5
   log_per_iter: 50
-  ckpt_num: 5
+  ckpt_num: 10
   port: 20001
 
   # optimizer

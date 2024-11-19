@@ -140,7 +140,7 @@ class MAR(nn.Module):
     depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
 
     # x = self.drop(x)
-    x, presents = self.blocks(x, octree_in, depth_low,
+    x, presents = self.blocks(x_token_embeddings, octree_in, depth_low,
                               depth_high, past=None, group_idx=depth_idx)
     x = self.ln_x(x)
 
