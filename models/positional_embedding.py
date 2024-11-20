@@ -13,6 +13,7 @@ import numpy as np
 FULL_DEPTH = 3
 MAX_DEPTH = 6
 
+
 def init_3d_freqs(dim: int, num_heads: int, theta: float = 10.0, rotate: bool = True):
   freqs_x = []
   freqs_y = []
@@ -24,19 +25,19 @@ def init_3d_freqs(dim: int, num_heads: int, theta: float = 10.0, rotate: bool = 
     theta = torch.rand(1) * torch.pi / 2 if rotate else torch.zeros(1)
     # TODO: correct?
     fx = torch.cat([
-      mag * torch.sin(theta) * torch.cos(phi), 
-      mag * torch.sin(theta) * torch.cos(torch.pi/2 + phi),
-      mag * torch.sin(theta + torch.pi/2) * torch.cos(phi),
+        mag * torch.sin(theta) * torch.cos(phi),
+        mag * torch.sin(theta) * torch.cos(torch.pi/2 + phi),
+        mag * torch.sin(theta + torch.pi/2) * torch.cos(phi),
     ], dim=-1)
     fy = torch.cat([
-      mag * torch.sin(theta) * torch.sin(phi), 
-      mag * torch.sin(theta) * torch.sin(torch.pi/2 + phi),
-      mag * torch.sin(theta + torch.pi/2) * torch.sin(phi),
+        mag * torch.sin(theta) * torch.sin(phi),
+        mag * torch.sin(theta) * torch.sin(torch.pi/2 + phi),
+        mag * torch.sin(theta + torch.pi/2) * torch.sin(phi),
     ], dim=-1)
     fz = torch.cat([
-      mag * torch.cos(theta),
-      mag * torch.cos(theta),
-      mag * torch.cos(theta + torch.pi/2),
+        mag * torch.cos(theta),
+        mag * torch.cos(theta),
+        mag * torch.cos(theta + torch.pi/2),
     ], dim=-1)
     freqs_x.append(fx)
     freqs_y.append(fy)
@@ -54,11 +55,11 @@ def compute_mixed_cis(freqs: torch.Tensor, xyz: torch.Tensor, num_heads: int):
   # No float 16 for this range
   # with torch.amp.autocast("cuda", enabled=False):
   freqs_x = (t_x.unsqueeze(-1) @
-              freqs[0].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
+             freqs[0].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
   freqs_y = (t_y.unsqueeze(-1) @
-              freqs[1].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
+             freqs[1].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
   freqs_z = (t_z.unsqueeze(-1) @
-              freqs[2].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
+             freqs[2].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
   freqs_cis = torch.polar(torch.ones_like(freqs_x), freqs_x + freqs_y + freqs_z)
   return freqs_cis
 
@@ -103,6 +104,12 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
   return xq_out.type_as(xq).to(xq.device), xk_out.type_as(xk).to(xk.device)
 
 
+def rescale_pos(x, scale, max_scale):
+  x = x * max_scale // scale
+  x += max_scale // scale // 2
+  return x
+
+
 class RotaryPosEmb(torch.nn.Module):
   """Multi-head Attention block with rotary position embeddings."""
 
@@ -113,7 +120,7 @@ class RotaryPosEmb(torch.nn.Module):
     self.num_heads = num_heads
     self.full_depth = full_depth
     self.max_depth = max_depth
-    self.max_scale = 2 ** (self.max_depth + 1) #  
+    self.max_scale = 2 ** (self.max_depth + 1)
 
     if self.rope_mixed:
       self.compute_cis = partial(compute_mixed_cis, num_heads=self.num_heads)
@@ -127,11 +134,6 @@ class RotaryPosEmb(torch.nn.Module):
       self.compute_cis = partial(
           compute_axial_cis, dim=self.dim // self.num_heads, theta=rope_theta)
 
-  def rescale_pos(self, x, scale):
-    x = x * self.max_scale // scale
-    x += self.max_scale // scale // 2
-    return x
-
   def forward(self, qkv: torch.Tensor, octree: Octree):
     # Apply rotary position embedding
     N = qkv.shape[0]
@@ -144,9 +146,9 @@ class RotaryPosEmb(torch.nn.Module):
     for d in range(octree.start_depth, octree.max_depth + 1):
       scale = 2 ** d
       x, y, z, b = octree.xyzb(d)
-      x = self.rescale_pos(x, scale)
-      y = self.rescale_pos(y, scale)
-      z = self.rescale_pos(z, scale)
+      x = rescale_pos(x, scale, self.max_scale)
+      y = rescale_pos(y, scale, self.max_scale)
+      z = rescale_pos(z, scale, self.max_scale)
       xyz = torch.stack([x, y, z], dim=-1).float()
 
       if self.rope_mixed:
@@ -174,11 +176,6 @@ class SinPosEmb(torch.nn.Module):
 
     self.depth_emb = torch.nn.Embedding(
         self.max_depth - self.full_depth + 1, num_embed)
-
-  def rescale_pos(self, x, scale):
-    x = x * self.max_scale // scale
-    x += self.max_scale // scale // 2
-    return x
 
   def get_emb(self, sin_inp):
     """
@@ -222,9 +219,9 @@ class SinPosEmb(torch.nn.Module):
     for d in range(depth_low, depth_high + 1):
       scale = 2 ** d
       x, y, z, b = octree.xyzb(d)
-      x = self.rescale_pos(x, scale)
-      y = self.rescale_pos(y, scale)
-      z = self.rescale_pos(z, scale)
+      x = rescale_pos(x, scale, self.max_scale)
+      y = rescale_pos(y, scale, self.max_scale)
+      z = rescale_pos(z, scale, self.max_scale)
 
       pos_emb_d = self.get_3d_pos_emb(x, y, z)
       depth_emb_d = self.depth_emb(torch.tensor(
@@ -266,6 +263,7 @@ class OctreeConvPosEmb(torch.nn.Module):
         break
     position_embeddings = torch.cat(position_embeddings, dim=0)
     return position_embeddings
+
 
 class DepthPosEmb(torch.nn.Module):
   def __init__(self, num_embed: int, full_depth: int = FULL_DEPTH, max_depth: int = MAX_DEPTH):
