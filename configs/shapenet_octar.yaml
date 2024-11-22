@@ -106,7 +106,7 @@ MODEL:
     use_checkpoint: True
     mask_ratio_min: 0.7
     start_temperature: 1.0
-    num_iters: 256 
+    num_iters: [64, 64, 256, 256]
   
 
 LOSS:
