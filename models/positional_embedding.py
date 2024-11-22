@@ -113,7 +113,7 @@ def rescale_pos(x, scale, max_scale):
 class RotaryPosEmb(torch.nn.Module):
   """Multi-head Attention block with rotary position embeddings."""
 
-  def __init__(self, dim, num_heads, full_depth=FULL_DEPTH, max_depth=MAX_DEPTH, rope_theta=200.0, rope_mixed=True):
+  def __init__(self, dim, num_heads, full_depth=FULL_DEPTH, max_depth=MAX_DEPTH, rope_theta=100.0, rope_mixed=True):
     super().__init__()
     self.rope_mixed = rope_mixed
     self.dim = dim
@@ -191,7 +191,7 @@ class SinPosEmb(torch.nn.Module):
     if channels % 2:
       channels += 1
 
-    inv_freq = 1.0 / (10000 ** (torch.arange(0, channels,
+    inv_freq = 1.0 / (100 ** (torch.arange(0, channels,
                       2, device=device).float() / channels))
 
     sin_inp_x = torch.einsum("i,j->ij", pos_x, inv_freq)
