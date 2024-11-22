@@ -205,7 +205,9 @@ class MAR(nn.Module):
       token_embedding_d = cond.repeat(nnum_d, 1)
       orders = torch.randperm(nnum_d, device=octree.device)
 
-      for i in tqdm(range(self.num_iters)):
+      num_iters = self.num_iters[d - depth_low] \
+          if isinstance(self.num_iters, list) else self.num_iters
+      for i in tqdm(range(num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
         x, _ = self.blocks(x, octree, depth_low, d,
                            group_idx=depth_idx)  # B x S x C
@@ -213,7 +215,7 @@ class MAR(nn.Module):
         x = self.ln_x(x)
 
         # mask ratio for the next round, following MaskGIT and MAGE.
-        mask_ratio = np.cos(math.pi / 2. * (i + 1) / self.num_iters)
+        mask_ratio = np.cos(math.pi / 2. * (i + 1) / num_iters)
         mask_len = torch.Tensor([np.floor(nnum_d * mask_ratio)]).cuda()
 
         # masks out at least one for the next iteration
@@ -223,7 +225,7 @@ class MAR(nn.Module):
         # get masking for next iteration and locations to be predicted in this iteration
         mask_next = self.mask_by_order(mask_len, orders).bool()
 
-        if i >= self.num_iters - 1:
+        if i >= num_iters - 1:
           mask_to_pred = mask.bool()
         else:
           mask_to_pred = torch.logical_xor(
@@ -231,7 +233,7 @@ class MAR(nn.Module):
         mask = mask_next
 
         temperature = self.start_temperature * \
-            ((self.num_iters - i) / self.num_iters)
+            ((num_iters - i) / num_iters)
 
         if d < depth_high:
           split_logits = self.split_head(x[mask_to_pred])
@@ -259,7 +261,7 @@ class MAR(nn.Module):
       if d < depth_high:
         split = split.long()
         octree = seq2octree(octree, split, d, d + 1)
-        export_octree(
-            octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
+        # export_octree(
+        #     octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
 
     return octree, vq_code
