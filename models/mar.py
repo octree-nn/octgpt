@@ -21,35 +21,34 @@ class MAR(nn.Module):
 
   def __init__(self,
                num_embed=256,
-               num_vq_embed=256,
                num_heads=8,
                num_blocks=8,
                num_classes=1,
-               split_size=2,
-               vq_size=128,
                patch_size=4096,
                dilation=2,
                drop_rate=0.1,
                pos_emb_type="SinPosEmb",
                use_checkpoint=True,
-               vae_name="vqvae",
                mask_ratio_min=0.7,
                start_temperature=1.0,
+               vqvae_config=None,
                num_iters=256,
                **kwargs):
     super(MAR, self).__init__()
+    self.vqvae_config = vqvae_config
     self.num_embed = num_embed
-    self.num_vq_embed = num_vq_embed
+    self.num_vq_embed = vqvae_config.embedding_channels
     self.num_blocks = num_blocks
     self.start_temperature = start_temperature
     self.num_iters = num_iters
-    self.vq_name = vae_name
+    self.vq_name = vqvae_config.name
+    self.split_size = 2  # 0/1 indicates the split signals
+    self.vq_size = vqvae_config.embedding_sizes
+    self.vq_groups = vqvae_config.quantizer_group if "group" in vqvae_config.quantizer_type else 1
 
-    # self.pos_emb = eval(pos_emb_type)(num_embed)
-
-    self.split_emb = nn.Embedding(split_size, num_embed)
+    self.split_emb = nn.Embedding(self.split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
-    self.vq_proj = nn.Linear(num_vq_embed, num_embed)
+    self.vq_proj = nn.Linear(self.num_vq_embed, num_embed)
 
     self.drop = nn.Dropout(drop_rate)
     self.blocks = OctFormer(
@@ -59,11 +58,11 @@ class MAR(nn.Module):
         use_checkpoint=use_checkpoint)
 
     self.ln_x = nn.LayerNorm(num_embed)
-    self.split_head = nn.Linear(num_embed, split_size)
+    self.split_head = nn.Linear(num_embed, self.split_size)
     if self.vq_name == "vqvae":
-      self.vq_head = nn.Linear(num_embed, vq_size)
+      self.vq_head = nn.Linear(num_embed, self.vq_size * self.vq_groups)
     elif self.vq_name == "vae":
-      self.vq_head = nn.Linear(num_embed, num_vq_embed)
+      self.vq_head = nn.Linear(num_embed, self.num_vq_embed)
 
     self.mask_ratio_generator = stats.truncnorm(
         (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
@@ -131,15 +130,10 @@ class MAR(nn.Module):
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
     mask = self.random_masking(seq_len, orders).bool()
     x_token_embeddings[mask] = cond
-    # positional embedding
-    # position_embeddings = self.pos_emb(
-    #     x_token_embeddings, octree_in, depth_low, depth_high)  # S x C
-    # x = x_token_embeddings + position_embeddings[:seq_len]
 
     # get depth index
     depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
 
-    # x = self.drop(x)
     x, presents = self.blocks(x_token_embeddings, octree_in, depth_low,
                               depth_high, past=None, group_idx=depth_idx)
     x = self.ln_x(x)
@@ -162,16 +156,17 @@ class MAR(nn.Module):
       mask_vq = mask[nnum_split:]
       vq_logits = self.vq_head(x[nnum_split:])
       if self.vq_name == "vqvae":
+        vq_logits = vq_logits[mask_vq].reshape(-1, self.vq_size)
+        targets_vq = targets_vq[mask_vq].reshape(-1)
         output['vq_loss'] = F.cross_entropy(
-            vq_logits[mask_vq], targets_vq[mask_vq])
+            vq_logits, targets_vq)
         # Top-k Accuracy
         with torch.no_grad():
-          mask_vq = mask[nnum_split:]
-          top5 = torch.topk(vq_logits[mask_vq], 5, dim=1).indices
+          top5 = torch.topk(vq_logits, 5, dim=1).indices
           correct_top5 = top5.eq(
-              targets_vq[mask_vq].view(-1, 1).expand_as(top5))
+              targets_vq.view(-1, 1).expand_as(top5))
           output['top5_accuracy'] = correct_top5.sum().float() / \
-              mask_vq.sum().float()
+              (mask_vq.sum().float() * self.vq_groups)
       elif self.vq_name == "vae":
         output['vq_loss'] = F.mse_loss(vq_logits[mask_vq], targets_vq[mask_vq])
     else:
@@ -214,10 +209,6 @@ class MAR(nn.Module):
           if isinstance(self.num_iters, list) else self.num_iters
       for i in tqdm(range(num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
-        # position_embeddings = self.pos_emb(
-        #     x, octree, depth_low, d)  # S x C
-        # x = x + position_embeddings[:x.shape[0], :]
-        # x = self.drop(x)
         x, _ = self.blocks(x, octree, depth_low, d,
                            group_idx=depth_idx)  # B x S x C
         x = x[-nnum_d:, :]
@@ -252,9 +243,12 @@ class MAR(nn.Module):
         else:
           vq_logits = self.vq_head(x[mask_to_pred])
           if self.vq_name == "vqvae":
+            vq_logits = vq_logits.reshape(-1, self.vq_size)
             ix = sample(vq_logits, temperature=temperature)
+            if self.vq_groups > 1:
+              ix = ix.reshape(-1, self.vq_groups)
             with torch.no_grad():
-              zq = vqvae.quantizer.embedding(ix)
+              zq = vqvae.quantizer.extract_code(ix)
               vq_code[mask_to_pred] = zq
               token_embedding_d[mask_to_pred] = self.vq_proj(zq)
           elif self.vq_name == "vae":

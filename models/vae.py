@@ -208,6 +208,10 @@ class VectorQuantizer(torch.nn.Module):
     # preserve gradients: Straight-Through gradients
     zq = z + (zq - z).detach()
     return zq, indices, loss
+  
+  def extract_code(self, indices):
+    zq = self.embedding(indices)
+    return zq
 
 
 class VectorQuantizerN(torch.nn.Module):
@@ -235,6 +239,11 @@ class VectorQuantizerN(torch.nn.Module):
     # preserve gradients: Straight-Through gradients
     zq = z + (zq - z).detach()
     return zq, indices, loss
+  
+  def extract_code(self, indices):
+    zq = self.embedding(indices)
+    zq = F.normalize(zq, dim=1)
+    return zq
 
 
 class VectorQuantizerP(torch.nn.Module):
@@ -268,6 +277,11 @@ class VectorQuantizerP(torch.nn.Module):
     # preserve gradients: Straight-Through gradients
     zq = z + (zq - z).detach()
     return zq, indices, loss
+  
+  def extract_code(self, indices):
+    codebook = self.proj(self.embedding.weight)
+    zq = torch.nn.functional.embedding(indices, codebook)
+    return zq
 
 
 class VectorQuantizerG(torch.nn.Module):
@@ -291,6 +305,12 @@ class VectorQuantizerG(torch.nn.Module):
     index = torch.stack(indices, dim=1)
     loss = torch.mean(torch.stack(losses))
     return zq, index, loss
+  
+  def extract_code(self, indices):
+    zqs = [self.quantizers[i].extract_code(indices[:, i])
+           for i in range(self.groups)]
+    zq = torch.cat(zqs, dim=1)
+    return zq
 
 
 class DiagonalGaussian(object):

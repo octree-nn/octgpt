@@ -32,8 +32,7 @@ class OctarSolver(Solver):
     #   model = GPT(**flags.GPT)
     if flags.model_name == "MAR":
       model = MAR(
-        vae_name=flags.VQVAE.name,
-        num_vq_embed=flags.VQVAE.embedding_channels,
+        vqvae_config=flags.VQVAE,
         **flags.GPT)
     else:
       raise NotImplementedError("Model not implemented")
@@ -179,7 +178,7 @@ class OctarSolver(Solver):
     self.batch_to_cuda(batch)
     octree_in = batch['octree_gt']
     split_seq = utils.octree2seq(
-        octree_in, self.full_depth, self.full_depth + 1).long()
+        octree_in, self.full_depth, self.depth_stop).long()
 
     octree_out, vq_code = self.model_module.generate(
         octree=octree_in,
