@@ -1,15 +1,11 @@
 import os
 import torch
 import ocnn
-import ognn
 from thsolver import Solver
 from ognn.octreed import OctreeD
 
 from utils import utils, builder
 from utils.distributed import get_rank
-# from models.vqvae import VQVAE
-from models.vae import VQVAE
-from models.legacy.gpt import GPT
 from models.mar import MAR
 from datasets import get_shapenet_dataset
 from tqdm import tqdm
@@ -32,8 +28,8 @@ class OctarSolver(Solver):
     #   model = GPT(**flags.GPT)
     if flags.model_name == "MAR":
       model = MAR(
-        vqvae_config=flags.VQVAE,
-        **flags.GPT)
+          vqvae_config=flags.VQVAE,
+          **flags.GPT)
     else:
       raise NotImplementedError("Model not implemented")
 
@@ -55,27 +51,10 @@ class OctarSolver(Solver):
     checkpoint = torch.load(flags.vqvae_ckpt, weights_only=True)
     vqvae.load_state_dict(checkpoint)
     print("Load VQVAE from", flags.vqvae_ckpt)
+
     self.vqvae_module = vqvae
+    self.model_module = model
     return model
-
-  def config_model(self):
-    flags = self.FLAGS.MODEL
-    model = self.get_model()
-
-    if self.world_size > 1:
-      if flags.sync_bn:
-        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        vqvae = torch.nn.SyncBatchNorm.convert_sync_batchnorm(vqvae)
-      model = torch.nn.parallel.DistributedDataParallel(
-          module=model, device_ids=[self.device],
-          output_device=self.device, broadcast_buffers=False,
-          find_unused_parameters=flags.find_unused_parameters)
-      self.model_module = model.module
-    else:
-      self.model_module = model
-    self.model = model
-    # if self.is_master:
-    #     print(model)
 
   def get_dataset(self, flags):
     return get_shapenet_dataset(flags)
@@ -94,10 +73,8 @@ class OctarSolver(Solver):
     split_seq = utils.octree2seq(
         octree_in, self.full_depth, self.depth_stop).long()
     output = self.model(
-        octree_in=octree_in,
-        depth_low=self.full_depth,
-        depth_high=self.depth_stop if self.enable_vqvae else self.depth_stop - 1,
-        split=split_seq,
+        octree_in=octree_in, depth_low=self.full_depth, split=split_seq,
+        depth_high=self.depth_stop if self.enable_vqvae else self.depth_stop-1,
         vqvae=self.vqvae_module if self.enable_vqvae else None)
     losses = [val for key, val in output.items() if 'loss' in key]
     output['loss'] = torch.sum(torch.stack(losses))
@@ -147,14 +124,16 @@ class OctarSolver(Solver):
       doctree_out = OctreeD(octree_out)
       with torch.no_grad():
         output = self.vqvae_module.decode_code(
-            vq_code, self.depth_stop, doctree_out, copy.deepcopy(doctree_out), update_octree=True)
+            vq_code, self.depth_stop, doctree_out,
+            copy.deepcopy(doctree_out), update_octree=True)
 
       # extract the mesh
       utils.create_mesh(
-          output['neural_mpu'], os.path.join(
-              self.logdir, f"results/{index}.obj"),
+          output['neural_mpu'],
+          os.path.join(self.logdir, f"results/{index}.obj"),
           size=self.FLAGS.SOLVER.resolution,
-          bbmin=-self.FLAGS.SOLVER.sdf_scale, bbmax=self.FLAGS.SOLVER.sdf_scale,
+          bbmin=-self.FLAGS.SOLVER.sdf_scale,
+          bbmax=self.FLAGS.SOLVER.sdf_scale,
           mesh_scale=self.FLAGS.DATA.test.point_scale,
           save_sdf=self.FLAGS.SOLVER.save_sdf)
 
