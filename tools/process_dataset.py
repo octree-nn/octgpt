@@ -26,6 +26,7 @@ def downsample_points():
   for filename in tqdm(filenames, ncols=80):
     filename_in = os.path.join(args.input_folder, filename, 'pointcloud.npz')
     filename_out = os.path.join(args.output_folder, filename, 'pointcloud.npz')
+    if not os.path.exists(filename_in): continue
 
     folder_out = os.path.dirname(filename_out)
     if not os.path.exists(folder_out):
@@ -62,6 +63,7 @@ def split_sdf():
   for filename in tqdm(filenames, ncols=80):
     filename_in = os.path.join(args.input_folder, filename, 'sdf.npz')
     filename_out = os.path.join(args.output_folder, filename, 'sdf')
+    if not os.path.exists(filename_in): continue
 
     folder_out = os.path.dirname(filename_out)
     if not os.path.exists(folder_out):
