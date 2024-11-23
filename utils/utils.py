@@ -398,7 +398,7 @@ def split2octree(octree, split, depth_low, depth_high, threshold=0.0):
 def octree2seq(octree: Octree, depth_low: int, depth_high: int,
                shift: bool = False):
   seq = torch.cat(octree.children[depth_low:depth_high])
-  seq = (seq >= 0).float()
+  seq = (seq >= 0).long()
 
   if shift:  # scale to [-1, 1]
     seq = 2 * seq - 1
