@@ -23,27 +23,16 @@ class OctarSolver(Solver):
     self.enable_vqvae = FLAGS.MODEL.enable_vqvae
 
   def get_model(self, flags):
-    flags = self.FLAGS.MODEL
     # if flags.model_name == "GPT":
     #   model = GPT(**flags.GPT)
     if flags.model_name == "MAR":
-      model = MAR(
-          vqvae_config=flags.VQVAE,
-          **flags.GPT)
+      model = MAR(vqvae_config=flags.VQVAE, **flags.GPT)
     else:
       raise NotImplementedError("Model not implemented")
-
-    # print model params
-    if self.is_master:
-      total_params = 0
-      for p in model.parameters():
-        total_params += p.numel()
-      print("Total number of parameters: %.3fM" % (total_params / 1e6))
 
     vqvae = builder.build_vae_model(flags.VQVAE)
     model.cuda(device=self.device)
     vqvae.cuda(device=self.device)
-
     utils.set_requires_grad(model, True)
     utils.set_requires_grad(vqvae, False)
 
