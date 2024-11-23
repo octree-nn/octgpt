@@ -22,7 +22,7 @@ class OctarSolver(Solver):
     self.full_depth = FLAGS.MODEL.full_depth
     self.enable_vqvae = FLAGS.MODEL.enable_vqvae
 
-  def get_model(self):
+  def get_model(self, flags):
     flags = self.FLAGS.MODEL
     # if flags.model_name == "GPT":
     #   model = GPT(**flags.GPT)

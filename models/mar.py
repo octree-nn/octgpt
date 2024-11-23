@@ -202,11 +202,16 @@ class MAR(nn.Module):
         split = -1 * torch.ones(nnum_d, device=octree.device).long()
       else:
         vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
+      # fullly masked
       token_embedding_d = cond.repeat(nnum_d, 1)
       orders = torch.randperm(nnum_d, device=octree.device)
 
+      # set generate parameters
       num_iters = self.num_iters[d - depth_low] \
           if isinstance(self.num_iters, list) else self.num_iters
+      start_temperature = self.start_temperature[d - depth_low] \
+          if isinstance(self.start_temperature, list) else self.start_temperature
+      
       for i in tqdm(range(num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
         x, _ = self.blocks(x, octree, depth_low, d,
@@ -232,7 +237,7 @@ class MAR(nn.Module):
               mask.bool(), mask_next.bool())
         mask = mask_next
 
-        temperature = self.start_temperature * \
+        temperature = start_temperature * \
             ((num_iters - i) / num_iters)
 
         if d < depth_high:
@@ -261,7 +266,7 @@ class MAR(nn.Module):
       if d < depth_high:
         split = split.long()
         octree = seq2octree(octree, split, d, d + 1)
-        # export_octree(
-        #     octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
+        export_octree(
+            octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
 
     return octree, vq_code
