@@ -142,23 +142,12 @@ class RotaryPosEmb(torch.nn.Module):
     qkv = qkv.view(-1, 3, H, C // H).permute(1, 2, 0, 3)
     q, k, v = qkv[0], qkv[1], qkv[2]
 
-    freqs_cis = []
-    for d in range(octree.start_depth, octree.max_depth + 1):
-      scale = 2 ** d
-      x, y, z, b = octree.xyzb(d)
-      x = rescale_pos(x, scale, self.max_scale)
-      y = rescale_pos(y, scale, self.max_scale)
-      z = rescale_pos(z, scale, self.max_scale)
-      xyz = torch.stack([x, y, z], dim=-1).float()
-
-      if self.rope_mixed:
-        # (N, dim // num_heads // 2)
-        freqs_cis_d = self.compute_cis(self.freqs, xyz)
-      else:
-        # (N, dim // num_heads // 2)
-        freqs_cis_d = self.compute_cis(xyz=xyz)
-      freqs_cis.append(freqs_cis_d)
-    freqs_cis = torch.cat(freqs_cis, dim=-2)
+    if self.rope_mixed:
+      # (N, dim // num_heads // 2)
+      freqs_cis = self.compute_cis(self.freqs, octree.xyz)
+    else:
+      # (N, dim // num_heads // 2)
+      freqs_cis = self.compute_cis(xyz=octree.xyz)
     q, k = apply_rotary_emb(q, k, freqs_cis=freqs_cis)
     qkv = torch.stack([q, k, v], dim=0)
     qkv = qkv.permute(2, 0, 1, 3).reshape(N, 3 * C)
@@ -184,8 +173,9 @@ class SinPosEmb(torch.nn.Module):
     emb = torch.stack((sin_inp.sin(), sin_inp.cos()), dim=-1)
     return torch.flatten(emb, -2, -1)
 
-  def get_3d_pos_emb(self, pos_x, pos_y, pos_z):
-    device = pos_x.device
+  def get_3d_pos_emb(self, xyz):
+    pos_x, pos_y, pos_z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+    device = xyz.device
 
     channels = int(np.ceil(self.num_embed / 6) * 2)
     if channels % 2:
@@ -216,18 +206,14 @@ class SinPosEmb(torch.nn.Module):
       depth_low = octree.start_depth
     if depth_high is None:
       depth_high = octree.max_depth
-    for d in range(depth_low, depth_high + 1):
-      scale = 2 ** d
-      x, y, z, b = octree.xyzb(d)
-      x = rescale_pos(x, scale, self.max_scale)
-      y = rescale_pos(y, scale, self.max_scale)
-      z = rescale_pos(z, scale, self.max_scale)
 
-      pos_emb_d = self.get_3d_pos_emb(x, y, z)
+    position_embeddings = []
+    for d in range(depth_low, depth_high + 1):
       depth_emb_d = self.depth_emb(torch.tensor(
-          [d - self.full_depth], device=octree.device))
-      position_embeddings.append(pos_emb_d + depth_emb_d)
+          [d - self.full_depth], device=octree.device)).repeat(octree.nnum[d], 1)
+      position_embeddings.append(depth_emb_d)
     position_embeddings = torch.cat(position_embeddings, dim=0)
+    position_embeddings += self.get_3d_pos_emb(octree.xyz)
     return position_embeddings
 
 

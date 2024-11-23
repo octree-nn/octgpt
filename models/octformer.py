@@ -12,14 +12,14 @@ import ocnn
 from ocnn.octree import Octree
 from typing import Optional
 from torch.utils.checkpoint import checkpoint
-from models.positional_embedding import RotaryPosEmb, SinPosEmb, OctreeConvPosEmb
+from models.positional_embedding import RotaryPosEmb, SinPosEmb, FULL_DEPTH, MAX_DEPTH
 
 
 class OctreeT(Octree):
 
-  def __init__(self, octree: Octree, data_length: int, patch_size: int = 24, 
-               dilation: int = 4, nempty: bool = True, 
-               group_idx: Optional[torch.Tensor] = None, 
+  def __init__(self, octree: Octree, data_length: int, patch_size: int = 24,
+               dilation: int = 4, nempty: bool = True,
+               group_idx: Optional[torch.Tensor] = None,
                max_depth: Optional[int] = None, start_depth: Optional[int] = None, **kwargs):
     super().__init__(octree.depth, octree.full_depth)
     self.__dict__.update(octree.__dict__)
@@ -45,6 +45,7 @@ class OctreeT(Octree):
     self.dilate_tf_mask = None
     self.rel_pos = None
     self.dilate_pos = None
+    self.xyz = None
     self.build_t()
 
   def build_t(self):
@@ -52,7 +53,8 @@ class OctreeT(Octree):
     self.build_attn_mask()
     if self.group_idx is not None:
       self.build_teacher_forcing_mask()
-    self.build_rel_pos()
+    # self.build_rel_pos()
+    self.build_xyz()
 
   def build_batch_idx(self):
     batch = []
@@ -109,6 +111,24 @@ class OctreeT(Octree):
     xyz = xyz.view(-1, self.patch_size, self.dilation, 3)
     xyz = xyz.transpose(1, 2).reshape(-1, self.patch_size, 3)
     self.dilate_pos = xyz.unsqueeze(2) - xyz.unsqueeze(1)
+
+  def build_xyz(self):
+    max_scale = 2 ** (MAX_DEPTH + 1)
+
+    def rescale_pos(x, scale):
+      x = x * max_scale // scale
+      x += max_scale // scale // 2
+      return x
+    
+    xyz = []
+    for d in range(self.start_depth, self.max_depth + 1):
+      scale = 2 ** d
+      x, y, z, b = self.xyzb(d)
+      x = rescale_pos(x, scale)
+      y = rescale_pos(y, scale)
+      z = rescale_pos(z, scale)
+      xyz.append(torch.stack([x, y, z], dim=1))
+    self.xyz = torch.cat(xyz, dim=0).float()
 
   def patch_partition(self, data: torch.Tensor, fill_value=0):
     # assert data.shape[0] == self.nnum_t
