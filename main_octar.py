@@ -59,8 +59,7 @@ class OctarSolver(Solver):
     self.batch_to_cuda(batch)
     octree_in = batch['octree_gt']
 
-    split_seq = utils.octree2seq(
-        octree_in, self.full_depth, self.depth_stop).long()
+    split_seq = utils.octree2seq(octree_in, self.full_depth, self.depth_stop)
     output = self.model(
         octree_in=octree_in, depth_low=self.full_depth, split=split_seq,
         depth_high=self.depth_stop if self.enable_vqvae else self.depth_stop-1,
@@ -145,8 +144,7 @@ class OctarSolver(Solver):
     batch = next(self.test_iter)
     self.batch_to_cuda(batch)
     octree_in = batch['octree_gt']
-    split_seq = utils.octree2seq(
-        octree_in, self.full_depth, self.depth_stop).long()
+    split_seq = utils.octree2seq(octree_in, self.full_depth, self.depth_stop)
 
     octree_out, vq_code = self.model_module.generate(
         octree=octree_in,
