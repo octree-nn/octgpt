@@ -156,6 +156,10 @@ class SinPosEmb(torch.nn.Module):
   def __init__(self, num_embed: int, full_depth: int = FULL_DEPTH, max_depth: int = MAX_DEPTH):
     super().__init__()
     self.num_embed = num_embed
+    self.full_depth = full_depth
+    self.max_depth = max_depth
+    self.depth_emb = torch.nn.Embedding(
+        self.max_depth - self.full_depth + 1, num_embed)
 
   def get_emb(self, sin_inp):
     """
@@ -192,7 +196,16 @@ class SinPosEmb(torch.nn.Module):
     return emb[:, :self.num_embed]
 
   def forward(self, data: torch.Tensor, octree: Octree):
+    depth_embedding = []
+    for d in range(octree.start_depth, octree.max_depth + 1):
+      nnum_d = octree.nnum[d]
+      # clone the data to avoid in-place operation
+      depth_emb_d = self.depth_emb(torch.tensor(
+          [d - self.full_depth], device=octree.device)).repeat(nnum_d, 1)
+      depth_embedding.append(depth_emb_d)
+    depth_embedding = torch.cat(depth_embedding, dim=0)
     position_embeddings = self.get_3d_pos_emb(octree.xyz)
+    position_embeddings += depth_embedding
     return position_embeddings
 
 
@@ -228,23 +241,3 @@ class OctreeConvPosEmb(torch.nn.Module):
         break
     position_embeddings = torch.cat(position_embeddings, dim=0)
     return position_embeddings
-
-
-class DepthPosEmb(torch.nn.Module):
-  def __init__(self, num_embed: int, full_depth: int = FULL_DEPTH, max_depth: int = MAX_DEPTH):
-    super().__init__()
-    self.full_depth = full_depth
-    self.max_depth = max_depth
-    self.depth_emb = torch.nn.Embedding(
-        self.max_depth - self.full_depth + 1, num_embed)
-
-  def forward(self, data: torch.Tensor, octree: Octree):
-    depth_embedding = []
-    for d in range(octree.start_depth, octree.max_depth + 1):
-      nnum_d = octree.nnum[d]
-      # clone the data to avoid in-place operation
-      depth_emb_d = self.depth_emb(torch.tensor(
-          [d - self.full_depth], device=octree.device)).repeat(nnum_d, 1)
-      depth_embedding.append(depth_emb_d)
-    depth_embedding = torch.cat(depth_embedding, dim=0)
-    return depth_embedding

@@ -12,7 +12,7 @@ import ocnn
 from ocnn.octree import Octree
 from typing import Optional
 from torch.utils.checkpoint import checkpoint
-from models.positional_embedding import RotaryPosEmb, SinPosEmb, DepthPosEmb, FULL_DEPTH, MAX_DEPTH
+from models.positional_embedding import RotaryPosEmb, SinPosEmb, FULL_DEPTH, MAX_DEPTH
 
 
 class OctreeT(Octree):
@@ -349,6 +349,7 @@ class OctFormerBlock(torch.nn.Module):
                dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
                qk_scale: Optional[float] = None, attn_drop: float = 0.0,
                proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
+               pos_emb: torch.nn.Module = SinPosEmb,
                activation: torch.nn.Module = torch.nn.GELU,
                **kwargs):
     super().__init__()
@@ -359,8 +360,15 @@ class OctFormerBlock(torch.nn.Module):
     self.mlp = MLP(dim, int(dim * mlp_ratio), dim, activation, proj_drop)
     # self.drop_path = ocnn.nn.OctreeDropPath(drop_path, nempty)
     self.dropout = torch.nn.Dropout(drop_path)
+    self.pos_emb = pos_emb(dim)
 
   def forward(self, data: torch.Tensor, octree: OctreeT, layer_past=None):
+    if layer_past is not None:
+      pe = self.pos_emb(data, octree)[
+          layer_past.shape[0]:octree.nnum_t]
+    else:
+      pe = self.pos_emb(data, octree)[:octree.nnum_t]
+    data = pe + data
     attn, layer_present = self.attention(
         self.norm1(data), octree, layer_past)
     data = data + self.dropout(attn)
@@ -390,18 +398,15 @@ class OctFormerStage(torch.nn.Module):
         dilation=1 if (i % 2 == 0) else dilation,
         mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
         attn_drop=attn_drop, proj_drop=proj_drop,
+        pos_emb=pos_emb,
         drop_path=drop_path[i] if isinstance(
             drop_path, list) else drop_path,
 
         nempty=nempty, activation=activation) for i in range(num_blocks)])
-    self.pos_emb = pos_emb(dim)
-    self.depth_emb = DepthPosEmb(dim)
     # self.norms = torch.nn.ModuleList([
     #         torch.nn.BatchNorm1d(dim) for _ in range(self.num_norms)])
 
   def forward(self, data: torch.Tensor, octree: OctreeT, past=None):
-    positional_embedding = self.pos_emb(data, octree) + self.depth_emb(data, octree)
-    data = positional_embedding + data
     presents = []
     for i in range(self.num_blocks):
       layer_past = past[i] if past is not None else None
