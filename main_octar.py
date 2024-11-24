@@ -103,10 +103,12 @@ class OctarSolver(Solver):
     self.config_dataloader(disable_train_data=True)
     self.load_checkpoint()
     self.model.eval()
-    for iter in tqdm(range(10000), ncols=80):
+    for iter in tqdm(range(0, 10000), ncols=80):
       index = self.world_size * iter + get_rank()
-      self.generate_step(index)
-      # self.generate_vq_step(index)
+      # self.generate_step(index)
+      self.generate_vq_step(index)
+      if index > 2831:
+        break
 
   def export_results(self, octree_out, index, vq_code=None):
     # export the octree
@@ -152,7 +154,6 @@ class OctarSolver(Solver):
   @torch.no_grad()
   def generate_vq_step(self, index):
     # forward the model
-    index = self.world_size * index + get_rank()
     batch = next(self.test_iter)
     self.batch_to_cuda(batch)
     octree_in = batch['octree_gt']
@@ -165,11 +166,12 @@ class OctarSolver(Solver):
         token_embeddings=self.model_module.split_emb(split_seq),
         vqvae=self.vqvae_module if self.enable_vqvae else None)
 
+    # vq_indices = self.vqvae_module.quantizer(vq_code)[1]
     # gt_vq_code = self.vqvae_module.extract_code(octree_in)
-    # gt_zq, gt_indices, _ = self.vqvae_module.quantizer(gt_vq_code)
+    # gt_indices = self.vqvae_module.quantizer(gt_vq_code)[1]
 
     # print(
-    #     f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.shape} indices are different")
+    #     f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.numel()} indices are different")
     # self.export_results(octree_in, index + 1, gt_indices)
     self.export_results(octree_out, index, vq_code)
 

@@ -31,7 +31,7 @@ class MAR(nn.Module):
                use_checkpoint=True,
                mask_ratio_min=0.7,
                start_temperature=1.0,
-               remask_prob=0.9,
+               remask_stage=0.9,
                vqvae_config=None,
                num_iters=256,
                **kwargs):
@@ -41,7 +41,7 @@ class MAR(nn.Module):
     self.num_vq_embed = vqvae_config.embedding_channels
     self.num_blocks = num_blocks
     self.start_temperature = start_temperature
-    self.remask_stage = remask_prob
+    self.remask_stage = remask_stage
     self.num_iters = num_iters
     self.split_size = 2  # 0/1 indicates the split signals
     self.vq_size = vqvae_config.embedding_sizes
@@ -193,7 +193,7 @@ class MAR(nn.Module):
     # past = torch.empty(
     # (self.n_layer, 0, self.n_embed * 3), device=octree.device)
     past = None
-    for d in range(depth_low, depth_high + 1):
+    for d in range(depth_high, depth_high + 1):
       # if not need to generate vq code
       if d == depth_high and vqvae == None:
         break
