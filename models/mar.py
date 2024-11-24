@@ -29,6 +29,7 @@ class MAR(nn.Module):
                drop_rate=0.1,
                pos_emb_type="SinPosEmb",
                use_checkpoint=True,
+               use_swin=True,
                mask_ratio_min=0.7,
                start_temperature=1.0,
                remask_stage=0.9,
@@ -56,12 +57,11 @@ class MAR(nn.Module):
         channels=num_embed, num_blocks=num_blocks, num_heads=num_heads,
         patch_size=patch_size, dilation=dilation, attn_drop=drop_rate,
         proj_drop=drop_rate, pos_emb=eval(pos_emb_type), nempty=False,
-        use_checkpoint=use_checkpoint)
+        use_checkpoint=use_checkpoint, use_swin=use_swin)
 
     self.ln_x = nn.LayerNorm(num_embed)
     self.split_head = nn.Linear(num_embed, self.split_size)
     self.vq_head = nn.Linear(num_embed, self.vq_size * self.vq_groups)
-
 
     self.mask_ratio_generator = stats.truncnorm(
         (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
@@ -131,8 +131,8 @@ class MAR(nn.Module):
     # get depth index
     depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
 
-    x, presents = self.blocks(x_token_embeddings, octree_in, depth_low,
-                              depth_high, past=None, group_idx=depth_idx)
+    x = self.blocks(x_token_embeddings, octree_in, depth_low,
+                    depth_high, group_idx=depth_idx)
     x = self.ln_x(x)
 
     output = {}
@@ -142,7 +142,8 @@ class MAR(nn.Module):
       output['split_loss'] = F.cross_entropy(
           split_logits[mask_split], targets_split[mask_split])
       with torch.no_grad():
-        correct_top1 = self.get_correct_topk(split_logits[mask_split], targets_split[mask_split], topk=1)
+        correct_top1 = self.get_correct_topk(
+            split_logits[mask_split], targets_split[mask_split], topk=1)
         output['split_accuracy'] = correct_top1.sum().float() / \
             mask_split.sum().float()
     else:
@@ -169,7 +170,7 @@ class MAR(nn.Module):
     topk = torch.topk(logits, topk, dim=-1).indices
     correct_topk = topk.eq(targets.unsqueeze(-1).expand_as(topk))
     return correct_topk
-  
+
   def get_remask(self, logits, tokens, mask, remask_prob=0.2, topk=1):
     remask = torch.rand_like(mask.float()) < remask_prob
     correct_topk = self.get_correct_topk(logits, tokens, topk=topk)
@@ -192,8 +193,7 @@ class MAR(nn.Module):
     vq_code = None
     # past = torch.empty(
     # (self.n_layer, 0, self.n_embed * 3), device=octree.device)
-    past = None
-    for d in range(depth_high, depth_high + 1):
+    for d in range(depth_low, depth_high + 1):
       # if not need to generate vq code
       if d == depth_high and vqvae == None:
         break
@@ -206,7 +206,8 @@ class MAR(nn.Module):
       if d < depth_high:
         split = -1 * torch.ones(nnum_d, device=octree.device).long()
       else:
-        vq_indices = -1 * torch.ones((nnum_d, self.vq_groups), device=octree.device).long()
+        vq_indices = -1 * \
+            torch.ones((nnum_d, self.vq_groups), device=octree.device).long()
         vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
       # fullly masked
       token_embedding_d = cond.repeat(nnum_d, 1)
@@ -217,10 +218,10 @@ class MAR(nn.Module):
           if isinstance(self.num_iters, list) else self.num_iters
       start_temperature = self.start_temperature[d - depth_low] \
           if isinstance(self.start_temperature, list) else self.start_temperature
-      
+
       for i in tqdm(range(num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
-        x, _ = self.blocks(x, octree, depth_low, d,
+        x = self.blocks(x, octree, depth_low, d,
                            group_idx=depth_idx)  # B x S x C
         x = x[-nnum_d:, :]
         x = self.ln_x(x)
