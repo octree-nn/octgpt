@@ -20,7 +20,7 @@ import copy
 
 from plyfile import PlyData, PlyElement
 from scipy.spatial import cKDTree
-from ocnn.octree import Points
+from ocnn.octree import Octree, Points
 from ocnn.nn import octree2voxel, octree_pad
 from tqdm import tqdm
 # autopep8: on
@@ -395,30 +395,17 @@ def split2octree(octree, split, depth_low, depth_high, threshold=0.0):
   return octree_out
 
 
-def octree2seq(octree, depth_low, depth_high, shift=False):
-  child = octree.children[depth_high - 1]
-  split = (child >= 0).float()
+def octree2seq(octree: Octree, depth_low: int, depth_high: int,
+               shift: bool = False):
+  seq = torch.cat(octree.children[depth_low:depth_high])
+  seq = (seq >= 0).long()
 
-  seq = []
-  seq.append(split)
-  for d in range(depth_low, depth_high - 1)[::-1]:
-    split_d = split.reshape(-1, 8)
-    split_d = torch.sum(split_d, dim=1, keepdim=True)
-    label = (split_d > 0).long()
-    split = octree_pad(data=label, octree=octree, depth=d)
-    seq = [split.squeeze(1)] + seq
-
-  # Reverse the sequence
-  seq = torch.cat(seq, dim=0)
-
-  if shift:
-    seq = 2 * seq - 1    # scale to [-1, 1]
-
+  if shift:  # scale to [-1, 1]
+    seq = 2 * seq - 1
   return seq
 
 
 def seq2octree(octree, seq, depth_low, depth_high, threshold=0.0):
-
   discrete_seq = (seq > threshold).long()
 
   octree_out = copy.deepcopy(octree)

@@ -23,27 +23,16 @@ class OctarSolver(Solver):
     self.enable_vqvae = FLAGS.MODEL.enable_vqvae
 
   def get_model(self, flags):
-    flags = self.FLAGS.MODEL
     # if flags.model_name == "GPT":
     #   model = GPT(**flags.GPT)
     if flags.model_name == "MAR":
-      model = MAR(
-          vqvae_config=flags.VQVAE,
-          **flags.GPT)
+      model = MAR(vqvae_config=flags.VQVAE, **flags.GPT)
     else:
       raise NotImplementedError("Model not implemented")
-
-    # print model params
-    if self.is_master:
-      total_params = 0
-      for p in model.parameters():
-        total_params += p.numel()
-      print("Total number of parameters: %.3fM" % (total_params / 1e6))
 
     vqvae = builder.build_vae_model(flags.VQVAE)
     model.cuda(device=self.device)
     vqvae.cuda(device=self.device)
-
     utils.set_requires_grad(model, True)
     utils.set_requires_grad(vqvae, False)
 
@@ -70,8 +59,7 @@ class OctarSolver(Solver):
     self.batch_to_cuda(batch)
     octree_in = batch['octree_gt']
 
-    split_seq = utils.octree2seq(
-        octree_in, self.full_depth, self.depth_stop).long()
+    split_seq = utils.octree2seq(octree_in, self.full_depth, self.depth_stop)
     output = self.model(
         octree_in=octree_in, depth_low=self.full_depth, split=split_seq,
         depth_high=self.depth_stop if self.enable_vqvae else self.depth_stop-1,
@@ -157,8 +145,7 @@ class OctarSolver(Solver):
     batch = next(self.test_iter)
     self.batch_to_cuda(batch)
     octree_in = batch['octree_gt']
-    split_seq = utils.octree2seq(
-        octree_in, self.full_depth, self.depth_stop).long()
+    split_seq = utils.octree2seq(octree_in, self.full_depth, self.depth_stop)
 
     octree_out, vq_code = self.model_module.generate(
         octree=octree_in,
