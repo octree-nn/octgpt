@@ -421,6 +421,27 @@ def seq2octree(octree, seq, depth_low, depth_high, threshold=0.0):
   return octree_out
 
 
+def get_depth2batch_indices(octree, depth_low, depth_high):
+  # Rearange data from depth-by-depth to batch-by-batch
+  batch_id = []
+  for d in range(depth_low, depth_high + 1):
+    batch_id.append(octree.batch_id(d))
+  batch_id = torch.cat(batch_id, dim=0)
+  batch_id_sorted, indices = torch.sort(batch_id)
+  return batch_id_sorted, indices
+
+
+def depth2batch(data, indices):
+  seq = data[indices]
+  return seq
+
+
+def batch2depth(seq, indices):
+  data = torch.zeros_like(seq)
+  data = data.scatter_(0, indices.unsqueeze(1).expand_as(seq), seq)
+  return data
+
+
 def set_requires_grad(model, bool):
   for p in model.parameters():
     p.requires_grad = bool

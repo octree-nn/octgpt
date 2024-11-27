@@ -10,6 +10,7 @@ from functools import partial
 from ocnn.octree import Octree
 import ocnn
 import numpy as np
+from utils.utils import depth2batch
 FULL_DEPTH = 3
 MAX_DEPTH = 6
 
@@ -196,14 +197,7 @@ class SinPosEmb(torch.nn.Module):
     return emb[:, :self.num_embed]
 
   def forward(self, data: torch.Tensor, octree: Octree):
-    depth_embedding = []
-    for d in range(octree.start_depth, octree.max_depth + 1):
-      nnum_d = octree.nnum[d]
-      # clone the data to avoid in-place operation
-      depth_emb_d = self.depth_emb(torch.tensor(
-          [d - self.full_depth], device=octree.device)).repeat(nnum_d, 1)
-      depth_embedding.append(depth_emb_d)
-    depth_embedding = torch.cat(depth_embedding, dim=0)
+    depth_embedding = self.depth_emb(octree.depth_idx - self.full_depth)
     position_embeddings = self.get_3d_pos_emb(octree.xyz)
     position_embeddings += depth_embedding
     return position_embeddings

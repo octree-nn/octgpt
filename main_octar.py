@@ -131,7 +131,7 @@ class OctarSolver(Solver):
   def generate_step(self, index):
     # forward the model
     octree_out = ocnn.octree.init_octree(
-        self.depth, self.full_depth, 1, self.device)
+        self.depth, self.full_depth, self.FLAGS.DATA.test.batch_size, self.device)
     octree_out, vq_code = self.model_module.generate(
         octree=octree_out,
         depth_low=self.full_depth, depth_high=self.depth_stop,

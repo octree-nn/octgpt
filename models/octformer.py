@@ -13,13 +13,13 @@ from ocnn.octree import Octree
 from typing import Optional
 from torch.utils.checkpoint import checkpoint
 from models.positional_embedding import RotaryPosEmb, SinPosEmb, FULL_DEPTH, MAX_DEPTH
+from utils.utils import get_depth2batch_indices, depth2batch, batch2depth
 
 
 class OctreeT(Octree):
 
   def __init__(self, octree: Octree, data_length: int, patch_size: int = 24,
                dilation: int = 4, nempty: bool = True, use_swin: bool = True,
-               group_idx: Optional[torch.Tensor] = None,
                max_depth: Optional[int] = None, start_depth: Optional[int] = None, **kwargs):
     super().__init__(octree.depth, octree.full_depth)
     self.__dict__.update(octree.__dict__)
@@ -28,7 +28,6 @@ class OctreeT(Octree):
     self.dilation = dilation    # TODO dilation as a list
     self.nempty = nempty
     self.use_swin = use_swin
-    self.group_idx = group_idx
     self.max_depth = max_depth or self.depth
     self.start_depth = start_depth or self.full_depth
     self.invalid_mask_value = -1e3
@@ -36,33 +35,46 @@ class OctreeT(Octree):
 
     self.block_num = patch_size * dilation
 
-    self.nnum_t = data_length
-    self.nnum_a = int(
-        np.ceil(self.nnum_t / self.block_num) * self.block_num)
-    if use_swin:
-      self.swin_nnum_pad = patch_size
-      self.swin_nnum_a = int(
-          np.ceil((self.nnum_t + self.swin_nnum_pad) / self.block_num) * self.block_num)
+    self.total_nnum_t = data_length
+    self.batch_idx, self.indices = get_depth2batch_indices(
+        self, self.start_depth, self.max_depth)
+    
     self.build_t()
 
   def build_t(self):
+    self.build_nnum()
+    self.depth_idx = self.build_depth_idx()
     self.patch_mask, self.dilate_mask = self.build_attn_mask()
     self.patch_tf_mask, self.dilate_tf_mask = self.build_teacher_forcing_mask()
     self.xyz = self.build_xyz()
     if self.use_swin:
       self.swin_patch_mask, self.swin_dilate_mask = self.build_attn_mask(
           use_swin=True)
-      self.swin_patch_tf_mask, self.swin_dilate_tf_mask = self.build_teacher_forcing_mask(
-          use_swin=True)
+      self.swin_patch_tf_mask, self.swin_dilate_tf_mask = \
+          self.build_teacher_forcing_mask(use_swin=True)
+
+  def build_nnum(self):
+    self.nnum_t = torch.zeros(self.batch_size, dtype=torch.int, device=self.device)
+    for i in range(self.batch_size):
+      self.nnum_t[i] = torch.where(self.batch_idx == i)[0].shape[0]
+    
+    self.nnum_a = (torch.ceil(self.nnum_t / self.block_num)
+                   * self.block_num).int()
+    if self.use_swin:
+      self.swin_nnum_pad = self.patch_size // 2
+      self.swin_nnum_a = (torch.ceil(
+          (self.nnum_t + self.swin_nnum_pad) / self.block_num) * self.block_num).int()
 
   def build_batch_idx(self, use_swin=False):
-    batch = []
-    for d in range(self.start_depth, self.max_depth + 1):
-      batch.append(self.batch_id(d, self.nempty))
-    batch_idx = torch.cat(batch, dim=0)
-    batch_idx = self.patch_partition(
-        batch_idx[:self.nnum_t], self.batch_size, use_swin=use_swin)
-    return batch_idx
+    batch_idx_patch = self.patch_partition(
+        self.batch_idx[:self.total_nnum_t], self.batch_size, use_swin=use_swin)
+    return batch_idx_patch
+  
+  def build_depth_idx(self):
+    depth_idx = torch.cat([torch.ones(self.nnum[d], device=self.device).long() * d
+                      for d in range(self.start_depth, self.max_depth + 1)])
+    depth_idx = depth2batch(depth_idx, self.indices)
+    return depth_idx
 
   def build_attn_mask(self, use_swin=False):
     batch = self.build_batch_idx(use_swin)
@@ -75,9 +87,9 @@ class OctreeT(Octree):
     return patch_mask, dilate_mask
 
   def build_teacher_forcing_mask(self, use_swin=False):
-    max_value = self.group_idx[:self.nnum_t].max()
+    max_value = self.depth_idx[:self.total_nnum_t].max()
     group = self.patch_partition(
-        self.group_idx[:self.nnum_t], fill_value=max_value + 1, use_swin=use_swin)
+        self.depth_idx[:self.total_nnum_t], fill_value=max_value + 1, use_swin=use_swin)
     mask = group.view(-1, self.patch_size)
     patch_tf_mask = self._calc_attn_mask(mask, cond="le")
 
@@ -115,30 +127,45 @@ class OctreeT(Octree):
       z = rescale_pos(z, scale)
       xyz.append(torch.stack([x, y, z], dim=1))
     xyz = torch.cat(xyz, dim=0).float()
+    xyz = depth2batch(xyz, self.indices)
     return xyz
 
   def patch_partition(self, data: torch.Tensor, fill_value=0, use_swin=False):
-    # assert data.shape[0] == self.nnum_t
-    if data.shape[0] != self.nnum_t:
-      print(data.shape[0], self.nnum_t)
-      exit(0)
-    if use_swin:
-      head = data.new_full((self.swin_nnum_pad,) + data.shape[1:], fill_value)
-      num = self.swin_nnum_a - self.nnum_t - self.swin_nnum_pad
-      tail = data.new_full((num,) + data.shape[1:], fill_value)
-      data = torch.cat([head, data, tail], dim=0)
-    else:
-      num = self.nnum_a - self.nnum_t
-      tail = data.new_full((num,) + data.shape[1:], fill_value)
-      data = torch.cat([data, tail], dim=0)
-    return data
+    assert data.shape[0] == self.total_nnum_t
+    output = []
+    cur_nnum_t = 0
+    for i in range(self.batch_size):
+      data_i = data[cur_nnum_t:cur_nnum_t + self.nnum_t[i]]
+      cur_nnum_t += self.nnum_t[i]
+      if use_swin:
+        head = data_i.new_full((self.swin_nnum_pad,) +
+                               data_i.shape[1:], fill_value)
+        num = self.swin_nnum_a[i] - self.nnum_t[i] - self.swin_nnum_pad
+        tail = data_i.new_full((num,) + data_i.shape[1:], fill_value)
+        data_i = torch.cat([head, data_i, tail], dim=0)
+      else:
+        num = self.nnum_a[i] - self.nnum_t[i]
+        tail = data_i.new_full((num,) + data_i.shape[1:], fill_value)
+        data_i = torch.cat([data_i, tail], dim=0)
+      output.append(data_i)
+    output = torch.cat(output, dim=0)
+    return output
 
   def patch_reverse(self, data: torch.Tensor, use_swin=False):
-    if use_swin:
-      data = data[self.swin_nnum_pad:self.nnum_t + self.swin_nnum_pad]
-    else:
-      data = data[:self.nnum_t]
-    return data
+    output = []
+    cur_nnum_a = 0
+    for i in range(self.batch_size):
+      if use_swin:
+        data_i = data[cur_nnum_a:cur_nnum_a + self.swin_nnum_a[i]]
+        cur_nnum_a += self.swin_nnum_a[i]
+        output.append(
+            data_i[self.swin_nnum_pad:self.nnum_t[i] + self.swin_nnum_pad])
+      else:
+        data_i = data[cur_nnum_a:cur_nnum_a + self.nnum_a[i]]
+        cur_nnum_a += self.nnum_a[i]
+        output.append(data_i[:self.nnum_t[i]])
+    output = torch.cat(output, dim=0)
+    return output
 
 
 class MLP(torch.nn.Module):
@@ -326,7 +353,7 @@ class OctFormerBlock(torch.nn.Module):
     self.pos_emb = pos_emb(dim)
 
   def forward(self, data: torch.Tensor, octree: OctreeT):
-    pe = self.pos_emb(data, octree)[:octree.nnum_t]
+    pe = self.pos_emb(data, octree)[:octree.total_nnum_t]
     data = pe + data
     attn = self.attention(
         self.norm1(data), octree)
@@ -399,10 +426,10 @@ class OctFormer(torch.nn.Module):
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
         use_checkpoint=use_checkpoint, use_swin=use_swin)
 
-  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int, group_idx=None):
+  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int):
     data_length = data.shape[0]
     octree = OctreeT(octree, data_length, self.patch_size, self.dilation, self.nempty,
-                     group_idx=group_idx, max_depth=depth_high, start_depth=depth_low,
+                     max_depth=depth_high, start_depth=depth_low,
                      use_swin=self.use_swin)
     data = self.layers(data, octree)
     return data

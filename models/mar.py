@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from models.octformer import OctFormer
 from models.positional_embedding import SinPosEmb, OctreeConvPosEmb
 from models.vae import DiagonalGaussian
-from utils.utils import seq2octree, sample, export_octree
+from utils.utils import seq2octree, sample, depth2batch, batch2depth, get_depth2batch_indices, export_octree
 from utils.distributed import get_rank
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,7 @@ class MAR(nn.Module):
     # generate token mask
     if mask_rate is None:
       mask_rate = self.mask_ratio_generator.rvs(1)[0]
+    # mask_rate = 1.0
     num_masked_tokens = max(int(np.ceil(seq_len * mask_rate)), 1)
     return self.mask_by_order(num_masked_tokens, orders)
 
@@ -91,9 +92,6 @@ class MAR(nn.Module):
     mask[orders[:mask_len]] = 1
     return mask
 
-  def get_depth_index(self, octree, depth_low, depth_high):
-    return torch.cat([torch.ones(octree.nnum[d], device=octree.device).long() * d
-                      for d in range(depth_low, depth_high + 1)])
 
   def forward(self, octree_in, depth_low, depth_high, category=None, split=None, vqvae=None):
     x_token_embeddings = torch.empty(
@@ -115,25 +113,24 @@ class MAR(nn.Module):
     if vqvae is not None:
       with torch.no_grad():
         vq_code = vqvae.extract_code(octree_in)
+        # quantizer dose not affect by the order
         zq, indices, _ = vqvae.quantizer(vq_code)
         targets_vq = copy.deepcopy(indices)
-        # posterior = DiagonalGaussian(vq_code, kl_std=0.25)
-        # zq = posterior.sample()
-        # targets_vq = copy.deepcopy(zq)
       zq = self.vq_proj(zq)
       x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
 
+    batch_id, depth2batch_indices = get_depth2batch_indices(octree_in, depth_low, depth_high)
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
     mask = self.random_masking(seq_len, orders).bool()
-    x_token_embeddings[mask] = cond
-
-    # get depth index
-    depth_idx = self.get_depth_index(octree_in, depth_low, depth_high)
+    batch_cond = cond[batch_id]
+    x_token_embeddings = torch.where(mask.unsqueeze(1), batch_cond, x_token_embeddings)
+    x_token_embeddings = depth2batch(x_token_embeddings, depth2batch_indices)
 
     x = self.blocks(x_token_embeddings, octree_in, depth_low,
-                    depth_high, group_idx=depth_idx)
+                    depth_high)
     x = self.ln_x(x)
+    x = batch2depth(x, depth2batch_indices)
 
     output = {}
     if split is not None:
@@ -182,8 +179,9 @@ class MAR(nn.Module):
 
   @torch.no_grad()
   def generate(self, octree, depth_low, depth_high, token_embeddings=None, category=None, vqvae=None):
+    batch_size = octree.batch_size
     if category == None:
-      category = torch.zeros(1).long().to(octree.device)
+      category = torch.zeros(batch_size).long().to(octree.device)
     cond = self.class_emb(category)  # 1 x C
 
     if token_embeddings is None:
@@ -198,10 +196,8 @@ class MAR(nn.Module):
       if d == depth_high and vqvae == None:
         break
 
-      # get depth index
-      depth_idx = self.get_depth_index(octree, depth_low, d)
       nnum_d = octree.nnum[d]
-
+      batch_id, depth2batch_indices = get_depth2batch_indices(octree, depth_low, d)
       mask = torch.ones(nnum_d, device=octree.device).bool()
       if d < depth_high:
         split = -1 * torch.ones(nnum_d, device=octree.device).long()
@@ -210,19 +206,20 @@ class MAR(nn.Module):
             torch.ones((nnum_d, self.vq_groups), device=octree.device).long()
         vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
       # fullly masked
-      token_embedding_d = cond.repeat(nnum_d, 1)
+      token_embedding_d = cond[batch_id][token_embeddings.shape[0]:]
       orders = torch.randperm(nnum_d, device=octree.device)
 
       # set generate parameters
       num_iters = self.num_iters[d - depth_low] \
           if isinstance(self.num_iters, list) else self.num_iters
+      num_iters *= batch_size
       start_temperature = self.start_temperature[d - depth_low] \
           if isinstance(self.start_temperature, list) else self.start_temperature
 
       for i in tqdm(range(num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
-        x = self.blocks(x, octree, depth_low, d,
-                           group_idx=depth_idx)  # B x S x C
+        x = depth2batch(x, depth2batch_indices)
+        x = self.blocks(x, octree, depth_low, d)  # B x S x C
         x = x[-nnum_d:, :]
         x = self.ln_x(x)
 
