@@ -212,7 +212,7 @@ class MAR(nn.Module):
       # set generate parameters
       num_iters = self.num_iters[d - depth_low] \
           if isinstance(self.num_iters, list) else self.num_iters
-      num_iters *= batch_size
+      # num_iters *= batch_size
       start_temperature = self.start_temperature[d - depth_low] \
           if isinstance(self.start_temperature, list) else self.start_temperature
 
@@ -220,8 +220,9 @@ class MAR(nn.Module):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
         x = depth2batch(x, depth2batch_indices)
         x = self.blocks(x, octree, depth_low, d)  # B x S x C
-        x = x[-nnum_d:, :]
         x = self.ln_x(x)
+        x = batch2depth(x, depth2batch_indices)
+        x = x[-nnum_d:, :]
 
         # mask ratio for the next round, following MaskGIT and MAGE.
         mask_ratio = np.cos(math.pi / 2. * (i + 1) / num_iters)
