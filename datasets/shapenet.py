@@ -88,7 +88,36 @@ class TransformShape:
     sdf = torch.zeros(self.surface_sample_num)
     return {'pos': points, 'sdf': sdf, 'grad': normals}
 
+  def rand_drop(self, sample):
+    r'''Randomly drop some points to make the dataset more diverse
+        and save GPU memory. '''
+
+    if not self.flags.get('rand_drop'):
+      return sample  # no rand_drop, return
+
+    # randomly 1 / 8 points
+    point_cloud = sample['point_cloud']
+    points = point_cloud['points']
+    center = np.mean(points, axis=0)
+    pc = (points - center) > 0
+    idx = (pc * np.array([4, 2, 1])).sum(axis=1)
+    rnd = np.random.randint(8)  # random index
+    flag = idx == rnd
+    point_cloud['points'] = point_cloud['points'][flag]
+    point_cloud['normals'] = point_cloud['normals'][flag]
+
+    if self.flags.get('load_sdf'):
+      sdf = sample['sdf']
+      pc = (sdf['points'] - center) > 0
+      idx = (pc * np.array([4, 2, 1])).sum(axis=1)
+      flag = idx == rnd        # reuse the same random index
+      sdf['points'] = sdf['points'][flag]
+      sdf['grad'] = sdf['grad'][flag]
+      sdf['sdf'] = sdf['sdf'][flag]
+    return {'point_cloud': point_cloud, 'sdf': sdf}
+
   def __call__(self, sample, idx):
+    sample = self.rand_drop(sample)
     output = self.process_points_cloud(sample['point_cloud'])
 
     if self.flags.get('load_sdf'):
