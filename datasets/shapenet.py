@@ -146,6 +146,5 @@ def collate_func(batch):
 def get_shapenet_dataset(flags):
   transform = TransformShape(flags)
   read_file = ReadFile(flags)
-  dataset = Dataset(flags.location, flags.filelist, transform,
-                    read_file=read_file, in_memory=flags.in_memory)
+  dataset = Dataset(flags.location, flags.filelist, transform, read_file)
   return dataset, collate_func
