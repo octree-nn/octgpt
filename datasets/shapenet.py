@@ -32,6 +32,12 @@ class TransformShape:
     normals = torch.from_numpy(sample['normals']).float()
     points = points / self.points_scale  # scale to [-1.0, 1.0]
 
+    # randomly drop some points if max_points is set to avoid OOM
+    if self.flags.get('max_points') and points.shape[0] > self.flags.max_points:
+      rand_idx = np.random.choice(points.shape[0], size=self.flags.max_points)
+      points = points[rand_idx]
+      normals = normals[rand_idx]
+
     # transform points to octree
     points_gt = Points(points=points, normals=normals)
     points_gt.clip(min=-1, max=1)
@@ -117,7 +123,7 @@ class TransformShape:
     return {'point_cloud': point_cloud, 'sdf': sdf}
 
   def __call__(self, sample, idx):
-    sample = self.rand_drop(sample)
+    # sample = self.rand_drop(sample)
     output = self.process_points_cloud(sample['point_cloud'])
 
     if self.flags.get('load_sdf'):
