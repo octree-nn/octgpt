@@ -17,6 +17,9 @@ SOLVER:
 
   # learning rate
   lr_type: constant
+  # lr_type: step_warmup
+  # warmup_epoch: 20
+  # milestones: (200,)
   step_size: (160,240)
 
   # sdf
@@ -66,7 +69,7 @@ DATA:
     # data loading
     location: *location
     filelist: data/ShapeNet/filelist/test_airplane.txt
-    batch_size: 1
+    batch_size: 2
     load_pointcloud: *load_pointcloud
     load_sdf: *load_sdf
     shuffle: False
