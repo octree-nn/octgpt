@@ -39,7 +39,10 @@ class OctreeT(Octree):
     self.nnum_a = (torch.ceil(self.nnum_t / self.block_num) * self.block_num).int()
     if self.use_swin:
       self.swin_nnum_pad = self.patch_size // 2
-      self.swin_nnum_a = (torch.ceil((self.nnum_t + self.swin_nnum_pad) / self.block_num) * self.block_num).int()
+    else:
+      self.swin_nnum_pad = 0
+    self.swin_nnum_a = (torch.ceil((self.nnum_t + self.swin_nnum_pad) / self.block_num) * self.block_num).int()
+    self.max_nnum_a = torch.max(self.nnum_a + self.swin_nnum_pad, self.swin_nnum_a)
     self.batch_idx, self.indices = get_depth2batch_indices(
         self, self.start_depth, self.max_depth)
     self.build_t()
@@ -140,6 +143,13 @@ class OctreeT(Octree):
       data = data[self.swin_nnum_pad:self.nnum_t + self.swin_nnum_pad]
     else:
       data = data[:self.nnum_t]
+    return data
+  
+  def patchify_data(self, data: torch.Tensor, fill_value=0):
+    head = data.new_full((self.swin_nnum_pad,) + data.shape[1:], fill_value)
+    num = self.max_nnum_a - self.nnum_t - self.swin_nnum_pad
+    tail = data.new_full((num,) + data.shape[1:], fill_value)
+    data = torch.cat([head, data, tail], dim=0)
     return data
 
 
@@ -252,7 +262,7 @@ class OctreeAttention(torch.nn.Module):
 
     def patchify_qkv(qkv: torch.Tensor):
       # patch partition
-      qkv = octree.patch_partition(qkv, use_swin=self.use_swin)
+      # qkv = octree.patch_partition(qkv, use_swin=self.use_swin)
       if D > 1:    # dilation
         qkv = qkv.view(-1, K, D, C * 3).transpose(1, 2).reshape(-1, C * 3)
       qkv = qkv.view(-1, K, C * 3)
@@ -266,6 +276,11 @@ class OctreeAttention(torch.nn.Module):
     # apply rotary position embedding
     if self.use_rope:
       qkv = self.rope(qkv, octree)
+    
+    if self.use_swin:
+      qkv = qkv[:octree.swin_nnum_a]
+    else:
+      qkv = qkv[octree.swin_nnum_pad:octree.swin_nnum_pad + octree.nnum_a]
 
     Q = K
     q, k, v = patchify_qkv(qkv)
@@ -290,8 +305,11 @@ class OctreeAttention(torch.nn.Module):
       data = data.view(-1, D, Q, C).transpose(1, 2).reshape(-1, C)
 
     # patch reverse
-    data = octree.patch_reverse(data, use_swin=self.use_swin)
-
+    # data = octree.patch_reverse(data, use_swin=self.use_swin)
+    if self.use_swin:
+      data = torch.cat([data, torch.zeros(octree.max_nnum_a - octree.swin_nnum_a, C, device=data.device)], dim=0)
+    else:
+      data = torch.cat([torch.zeros(octree.swin_nnum_pad, C, device=data.device), data, torch.zeros(octree.max_nnum_a - octree.nnum_a - octree.swin_nnum_pad, C, device=data.device)], dim=0)
     # ffn
     data = self.proj(data)
     data = self.proj_drop(data)
@@ -406,5 +424,10 @@ class OctFormer(torch.nn.Module):
     octree = OctreeT(octree, data_length, self.patch_size, self.dilation, self.nempty,
                      max_depth=depth_high, start_depth=depth_low,
                      use_swin=self.use_swin)
+    # (swin_pad_nnum + patch_length)
+    data = octree.patchify_data(data)
+    octree.xyz = octree.patchify_data(octree.xyz)
+    octree.depth_idx = octree.patchify_data(octree.depth_idx, fill_value=octree.start_depth)
     data = self.layers(data, octree)
+    data = octree.patch_reverse(data, use_swin=self.use_swin)
     return data

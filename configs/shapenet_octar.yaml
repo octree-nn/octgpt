@@ -45,7 +45,7 @@ DATA:
 
     # data loading
     location: &location data/ShapeNet/dataset_new
-    filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
+    filelist: &filelist data/ShapeNet/filelist/train_chair.txt
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
     batch_size: 1
@@ -68,14 +68,11 @@ DATA:
 
     # data loading
     location: *location
-    filelist: data/ShapeNet/filelist/test_airplane.txt
-    batch_size: 2
+    filelist: data/ShapeNet/filelist/test_chair.txt
+    batch_size: 1
     load_pointcloud: *load_pointcloud
     load_sdf: *load_sdf
     shuffle: False
-
-
-
 
 MODEL:
   depth: *depth
