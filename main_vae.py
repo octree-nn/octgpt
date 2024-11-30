@@ -2,6 +2,7 @@ import os
 import torch
 import ocnn
 import ognn
+import torch.nn.functional as F
 from thsolver import Solver
 from ognn.octreed import OctreeD
 
@@ -27,8 +28,13 @@ class VAESolver(Solver):
 
   def compute_loss(self, batch, model_out):
     # octree loss
-    output = ognn.loss.compute_octree_loss(
-        model_out['logits'], model_out['octree_out'])
+    output = dict()
+    wo = [1.0] * 7 + [0.1] * 3  # lower weights for deep layers
+    logits = model_out['logits']
+    for d in logits.keys():
+      label_gt = model_out['octree_out'].nempty_mask(d).long()
+      output['loss_%d' % d] = F.cross_entropy(logits[d], label_gt) * wo[d]
+      output['accu_%d' % d] = logits[d].argmax(1).eq(label_gt).float().mean()
 
     # regression loss
     wg, ws, wm = 1.0, 200.0, 1.0

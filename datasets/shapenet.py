@@ -32,6 +32,12 @@ class TransformShape:
     normals = torch.from_numpy(sample['normals']).float()
     points = points / self.points_scale  # scale to [-1.0, 1.0]
 
+    # randomly drop some points if max_points is set to avoid OOM
+    if self.flags.get('max_points') and points.shape[0] > self.flags.max_points:
+      rand_idx = np.random.choice(points.shape[0], size=self.flags.max_points)
+      points = points[rand_idx]
+      normals = normals[rand_idx]
+
     # transform points to octree
     points_gt = Points(points=points, normals=normals)
     points_gt.clip(min=-1, max=1)
@@ -88,7 +94,36 @@ class TransformShape:
     sdf = torch.zeros(self.surface_sample_num)
     return {'pos': points, 'sdf': sdf, 'grad': normals}
 
+  def rand_drop(self, sample):
+    r'''Randomly drop some points to make the dataset more diverse
+        and save GPU memory. '''
+
+    if not self.flags.get('rand_drop'):
+      return sample  # no rand_drop, return
+
+    # randomly 1 / 8 points
+    point_cloud = sample['point_cloud']
+    points = point_cloud['points']
+    center = np.mean(points, axis=0)
+    pc = (points - center) > 0
+    idx = (pc * np.array([4, 2, 1])).sum(axis=1)
+    rnd = np.random.randint(8)  # random index
+    flag = idx == rnd
+    point_cloud['points'] = point_cloud['points'][flag]
+    point_cloud['normals'] = point_cloud['normals'][flag]
+
+    if self.flags.get('load_sdf'):
+      sdf = sample['sdf']
+      pc = (sdf['points'] - center) > 0
+      idx = (pc * np.array([4, 2, 1])).sum(axis=1)
+      flag = idx == rnd        # reuse the same random index
+      sdf['points'] = sdf['points'][flag]
+      sdf['grad'] = sdf['grad'][flag]
+      sdf['sdf'] = sdf['sdf'][flag]
+    return {'point_cloud': point_cloud, 'sdf': sdf}
+
   def __call__(self, sample, idx):
+    # sample = self.rand_drop(sample)
     output = self.process_points_cloud(sample['point_cloud'])
 
     if self.flags.get('load_sdf'):
@@ -146,6 +181,5 @@ def collate_func(batch):
 def get_shapenet_dataset(flags):
   transform = TransformShape(flags)
   read_file = ReadFile(flags)
-  dataset = Dataset(flags.location, flags.filelist, transform,
-                    read_file=read_file, in_memory=flags.in_memory)
+  dataset = Dataset(flags.location, flags.filelist, transform, read_file)
   return dataset, collate_func
