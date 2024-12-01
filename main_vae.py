@@ -29,7 +29,7 @@ class VAESolver(Solver):
   def compute_loss(self, batch, model_out):
     # octree loss
     output = dict()
-    wo = [1.0] * 7 + [0.1] * 3  # lower weights for deep layers
+    wo = [1.0] * 8 + [0.1] * 3  # lower weights for deep layers
     logits = model_out['logits']
     for d in logits.keys():
       label_gt = model_out['octree_out'].nempty_mask(d).long()
