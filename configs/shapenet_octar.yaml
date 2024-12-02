@@ -45,7 +45,7 @@ DATA:
 
     # data loading
     location: &location data/ShapeNet/dataset_new
-    filelist: &filelist data/ShapeNet/filelist/train_chair.txt
+    filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
     batch_size: 1
@@ -68,7 +68,7 @@ DATA:
 
     # data loading
     location: *location
-    filelist: data/ShapeNet/filelist/test_chair.txt
+    filelist: data/ShapeNet/filelist/test_airplane.txt
     batch_size: 1
     load_pointcloud: *load_pointcloud
     load_sdf: *load_sdf
@@ -106,9 +106,10 @@ MODEL:
     pos_emb_type: SinPosEmb
     use_checkpoint: True
     use_swin: True
+    use_vq_sample: False
     mask_ratio_min: 0.7
     remask_stage: 0.7
-    start_temperature: [1.3, 1.4, 0.5, 0.5]
+    start_temperature: [1.4, 1.5, 0.5, 0.5]
     num_iters: [64, 64, 128, 256]
   
 

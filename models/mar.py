@@ -4,13 +4,14 @@ import scipy.stats as stats
 import math
 import logging
 import copy
+import ocnn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from models.octformer import OctFormer
 from models.positional_embedding import SinPosEmb, OctreeConvPosEmb
 from models.vae import DiagonalGaussian
-from utils.utils import seq2octree, sample, depth2batch, batch2depth, get_depth2batch_indices, export_octree
+from utils.utils import seq2octree, sample, depth2batch, batch2depth, get_depth2batch_indices, get_batch_id, export_octree
 from utils.distributed import get_rank
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class MAR(nn.Module):
                pos_emb_type="SinPosEmb",
                use_checkpoint=True,
                use_swin=True,
+               use_vq_sample=False,
                mask_ratio_min=0.7,
                start_temperature=1.0,
                remask_stage=0.9,
@@ -46,7 +48,8 @@ class MAR(nn.Module):
     self.num_iters = num_iters
     self.split_size = 2  # 0/1 indicates the split signals
     self.vq_size = vqvae_config.embedding_sizes
-    self.vq_groups = vqvae_config.quantizer_group if "group" in vqvae_config.quantizer_type else 1
+    self.vq_groups = vqvae_config.quantizer_group
+    self.use_vq_sample = use_vq_sample
 
     self.split_emb = nn.Embedding(self.split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
@@ -62,6 +65,22 @@ class MAR(nn.Module):
     self.ln_x = nn.LayerNorm(num_embed)
     self.split_head = nn.Linear(num_embed, self.split_size)
     self.vq_head = nn.Linear(num_embed, self.vq_size * self.vq_groups)
+
+    if self.use_vq_sample:
+      self.vq_encoder = torch.nn.ModuleList([
+          ocnn.modules.OctreeResBlocks(
+              num_embed, num_embed, resblk_num=2, bottleneck=4, nempty=False,
+              resblk=ocnn.modules.OctreeResBlockGn, use_checkpoint=use_checkpoint),
+          ocnn.modules.OctreeConvGnRelu(
+              num_embed, num_embed, group=32, kernel_size=[2], stride=2)
+      ])
+      self.vq_decoder = torch.nn.ModuleList([
+          ocnn.modules.OctreeResBlocks(
+              num_embed, num_embed, resblk_num=2, bottleneck=4, nempty=False,
+              resblk=ocnn.modules.OctreeResBlockGn, use_checkpoint=use_checkpoint),
+          ocnn.modules.OctreeDeconvGnRelu(
+              num_embed, num_embed, group=32, kernel_size=[2], stride=2),
+      ])
 
     self.mask_ratio_generator = stats.truncnorm(
         (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
@@ -92,6 +111,40 @@ class MAR(nn.Module):
     mask[orders[:mask_len]] = 1
     return mask
 
+  def forward_vq_downsample(self, x, octree, depth):
+    resblock, downsample = self.vq_encoder
+    x = resblock(x, octree, depth)
+    x = downsample(x, octree, depth)
+    return x
+
+  def forward_vq_upsample(self, zq, octree, depth):
+    resblock, upsample = self.vq_decoder
+    zq = resblock(zq, octree, depth)
+    zq = upsample(zq, octree, depth)
+    return zq
+
+  def forward_model(self, x, octree, depth_list, nnum_split):
+    _, depth2batch_indices = get_depth2batch_indices(
+        octree, depth_list)
+    use_vq_sample = self.use_vq_sample and nnum_split < x.shape[0]
+    if use_vq_sample:
+      x_split = x[:nnum_split]
+      x_vq = self.forward_vq_downsample(
+          x[nnum_split:], octree, depth_list[-1] + 1)
+      x = torch.cat([x_split, x_vq], dim=0)
+
+    x = depth2batch(x, depth2batch_indices)
+    x = self.blocks(x, octree, depth_list)
+    x = self.ln_x(x)
+    x = batch2depth(x, depth2batch_indices)
+
+    if use_vq_sample:
+      # skip connection
+      x_split = x[:nnum_split]
+      x_vq = x[nnum_split:] + x_vq
+      x_vq = self.forward_vq_upsample(x_vq, octree, depth_list[-1])
+      x = torch.cat([x_split, x_vq], dim=0)
+    return x
 
   def forward(self, octree_in, depth_low, depth_high, category=None, split=None, vqvae=None):
     x_token_embeddings = torch.empty(
@@ -119,18 +172,21 @@ class MAR(nn.Module):
       zq = self.vq_proj(zq)
       x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
 
-    batch_id, depth2batch_indices = get_depth2batch_indices(octree_in, depth_low, depth_high)
+    if self.use_vq_sample:
+      depth_list = list(range(depth_low, depth_high)) + [depth_high - 1]
+    else:
+      depth_list = list(range(depth_low, depth_high + 1))
+
+    batch_id = get_batch_id(octree_in, range(depth_low, depth_high + 1))
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
     mask = self.random_masking(seq_len, orders).bool()
     batch_cond = cond[batch_id]
-    x_token_embeddings = torch.where(mask.unsqueeze(1), batch_cond, x_token_embeddings)
-    x_token_embeddings = depth2batch(x_token_embeddings, depth2batch_indices)
+    x_token_embeddings = torch.where(
+        mask.unsqueeze(1), batch_cond, x_token_embeddings)
 
-    x = self.blocks(x_token_embeddings, octree_in, depth_low,
-                    depth_high)
-    x = self.ln_x(x)
-    x = batch2depth(x, depth2batch_indices)
+    x = self.forward_model(
+        x_token_embeddings, octree_in, depth_list, nnum_split)
 
     output = {}
     if split is not None:
@@ -189,15 +245,14 @@ class MAR(nn.Module):
           (0, self.num_embed), device=octree.device)
 
     vq_code = None
-    # past = torch.empty(
-    # (self.n_layer, 0, self.n_embed * 3), device=octree.device)
     for d in range(depth_low, depth_high + 1):
-      # if not need to generate vq code
-      if d == depth_high and vqvae == None:
-        break
-
       nnum_d = octree.nnum[d]
-      batch_id, depth2batch_indices = get_depth2batch_indices(octree, depth_low, d)
+      nnum_split = sum([octree.nnum[i] for i in range(depth_low, min(d + 1, depth_high))])
+      if self.use_vq_sample and d == depth_high:
+        depth_list = list(range(depth_low, d)) + [depth_high - 1]
+      else:
+        depth_list = list(range(depth_low, d + 1))
+
       mask = torch.ones(nnum_d, device=octree.device).bool()
       if d < depth_high:
         split = -1 * torch.ones(nnum_d, device=octree.device).long()
@@ -206,22 +261,20 @@ class MAR(nn.Module):
             torch.ones((nnum_d, self.vq_groups), device=octree.device).long()
         vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
       # fullly masked
+      batch_id = get_batch_id(
+          octree, range(depth_low, d + 1))
       token_embedding_d = cond[batch_id][token_embeddings.shape[0]:]
       orders = torch.randperm(nnum_d, device=octree.device)
 
       # set generate parameters
       num_iters = self.num_iters[d - depth_low] \
           if isinstance(self.num_iters, list) else self.num_iters
-      # num_iters *= batch_size
       start_temperature = self.start_temperature[d - depth_low] \
           if isinstance(self.start_temperature, list) else self.start_temperature
 
       for i in tqdm(range(num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
-        x = depth2batch(x, depth2batch_indices)
-        x = self.blocks(x, octree, depth_low, d)  # B x S x C
-        x = self.ln_x(x)
-        x = batch2depth(x, depth2batch_indices)
+        x = self.forward_model(x, octree, depth_list, nnum_split)
         x = x[-nnum_d:, :]
 
         # mask ratio for the next round, following MaskGIT and MAGE.
@@ -264,8 +317,7 @@ class MAR(nn.Module):
             mask_to_pred = mask_to_pred | remask
           vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
           ix = sample(vq_logits, temperature=temperature)
-          if self.vq_groups > 1:
-            ix = ix.reshape(-1, self.vq_groups)
+          ix = ix.reshape(-1, self.vq_groups)
           vq_indices[mask_to_pred] = ix
           with torch.no_grad():
             zq = vqvae.quantizer.extract_code(ix)
@@ -274,7 +326,6 @@ class MAR(nn.Module):
 
       token_embeddings = torch.cat(
           [token_embeddings, token_embedding_d], dim=0)
-
       if d < depth_high:
         split = split.long()
         octree = seq2octree(octree, split, d, d + 1)

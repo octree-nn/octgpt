@@ -420,13 +420,16 @@ def seq2octree(octree, seq, depth_low, depth_high, threshold=0.0):
     octree_out.octree_grow(d + 1)
   return octree_out
 
-
-def get_depth2batch_indices(octree, depth_low, depth_high):
-  # Rearange data from depth-by-depth to batch-by-batch
+def get_batch_id(octree, depth_list):
   batch_id = []
-  for d in range(depth_low, depth_high + 1):
+  for d in depth_list:
     batch_id.append(octree.batch_id(d))
   batch_id = torch.cat(batch_id, dim=0)
+  return batch_id
+
+def get_depth2batch_indices(octree, depth_list):
+  # Rearange data from depth-by-depth to batch-by-batch
+  batch_id = get_batch_id(octree, depth_list)
   batch_id_sorted, indices = torch.sort(batch_id)
   return batch_id_sorted, indices
 

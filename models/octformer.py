@@ -20,7 +20,7 @@ class OctreeT(Octree):
 
   def __init__(self, octree: Octree, data_length: int, patch_size: int = 24,
                dilation: int = 4, nempty: bool = True, use_swin: bool = True,
-               max_depth: Optional[int] = None, start_depth: Optional[int] = None, **kwargs):
+               depth_list: list = None, **kwargs):
     super().__init__(octree.depth, octree.full_depth)
     self.__dict__.update(octree.__dict__)
 
@@ -28,20 +28,21 @@ class OctreeT(Octree):
     self.dilation = dilation    # TODO dilation as a list
     self.nempty = nempty
     self.use_swin = use_swin
-    self.max_depth = max_depth or self.depth
-    self.start_depth = start_depth or self.full_depth
+    self.depth_list = depth_list if depth_list != None else \
+        list(range(self.full_depth, self.depth + 1))
     self.invalid_mask_value = -1e3
-    assert self.start_depth > 1
 
     self.block_num = patch_size * dilation
 
     self.nnum_t = torch.tensor(data_length, device=self.device)
-    self.nnum_a = (torch.ceil(self.nnum_t / self.block_num) * self.block_num).int()
+    self.nnum_a = (torch.ceil(self.nnum_t / self.block_num)
+                   * self.block_num).int()
     if self.use_swin:
       self.swin_nnum_pad = self.patch_size // 2
-      self.swin_nnum_a = (torch.ceil((self.nnum_t + self.swin_nnum_pad) / self.block_num) * self.block_num).int()
+      self.swin_nnum_a = (torch.ceil(
+          (self.nnum_t + self.swin_nnum_pad) / self.block_num) * self.block_num).int()
     self.batch_idx, self.indices = get_depth2batch_indices(
-        self, self.start_depth, self.max_depth)
+        self, self.depth_list)
     self.build_t()
 
   def build_t(self):
@@ -59,10 +60,10 @@ class OctreeT(Octree):
     batch_idx_patch = self.patch_partition(
         self.batch_idx[:self.nnum_t], self.batch_size, use_swin=use_swin)
     return batch_idx_patch
-  
+
   def build_depth_idx(self):
-    depth_idx = torch.cat([torch.ones(self.nnum[d], device=self.device).long() * d \
-        for d in range(self.start_depth, self.max_depth + 1)])
+    depth_idx = torch.cat([torch.ones(self.nnum[d], device=self.device).long() * d
+                           for d in self.depth_list])
     depth_idx = depth2batch(depth_idx, self.indices)
     return depth_idx
 
@@ -109,7 +110,7 @@ class OctreeT(Octree):
       return x
 
     xyz = []
-    for d in range(self.start_depth, self.max_depth + 1):
+    for d in self.depth_list:
       scale = 2 ** d
       x, y, z, b = self.xyzb(d)
       x = rescale_pos(x, scale)
@@ -401,10 +402,10 @@ class OctFormer(torch.nn.Module):
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
         use_checkpoint=use_checkpoint, use_swin=use_swin)
 
-  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int, depth_high: int):
+  def forward(self, data: torch.Tensor, octree: Octree, depth_list: int):
     data_length = data.shape[0]
     octree = OctreeT(octree, data_length, self.patch_size, self.dilation, self.nempty,
-                     max_depth=depth_high, start_depth=depth_low,
+                     depth_list=depth_list,
                      use_swin=self.use_swin)
     data = self.layers(data, octree)
     return data
