@@ -62,8 +62,8 @@ class OctreeT(Octree):
     return batch_idx_patch
 
   def build_depth_idx(self):
-    depth_idx = torch.cat([torch.ones(self.nnum[d], device=self.device).long() * d
-                           for d in self.depth_list])
+    depth_idx = torch.cat([torch.ones(self.nnum[self.depth_list[i]], device=self.device).long() * i
+                           for i in range(len(self.depth_list))])
     depth_idx = depth2batch(depth_idx, self.indices)
     return depth_idx
 

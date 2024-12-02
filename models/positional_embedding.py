@@ -197,7 +197,7 @@ class SinPosEmb(torch.nn.Module):
     return emb[:, :self.num_embed]
 
   def forward(self, data: torch.Tensor, octree: Octree):
-    depth_embedding = self.depth_emb(octree.depth_idx - self.full_depth)
+    depth_embedding = self.depth_emb(octree.depth_idx)
     position_embeddings = self.get_3d_pos_emb(octree.xyz)
     position_embeddings += depth_embedding
     return position_embeddings
