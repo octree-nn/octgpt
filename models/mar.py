@@ -32,6 +32,7 @@ class MAR(nn.Module):
                use_checkpoint=True,
                use_swin=True,
                use_vq_sample=False,
+               num_vq_blocks=2,
                mask_ratio_min=0.7,
                start_temperature=1.0,
                remask_stage=0.9,
@@ -50,6 +51,7 @@ class MAR(nn.Module):
     self.vq_size = vqvae_config.embedding_sizes
     self.vq_groups = vqvae_config.quantizer_group
     self.use_vq_sample = use_vq_sample
+    self.num_vq_blocks = num_vq_blocks
 
     self.split_emb = nn.Embedding(self.split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
@@ -67,20 +69,21 @@ class MAR(nn.Module):
     self.vq_head = nn.Linear(num_embed, self.vq_size * self.vq_groups)
 
     if self.use_vq_sample:
-      self.vq_encoder = torch.nn.ModuleList([
-          ocnn.modules.OctreeResBlocks(
-              num_embed, num_embed, resblk_num=2, bottleneck=4, nempty=False,
-              resblk=ocnn.modules.OctreeResBlockGn, use_checkpoint=use_checkpoint),
-          ocnn.modules.OctreeConvGnRelu(
-              num_embed, num_embed, group=32, kernel_size=[2], stride=2)
-      ])
-      self.vq_decoder = torch.nn.ModuleList([
-          ocnn.modules.OctreeResBlocks(
-              num_embed, num_embed, resblk_num=2, bottleneck=4, nempty=False,
-              resblk=ocnn.modules.OctreeResBlockGn, use_checkpoint=use_checkpoint),
-          ocnn.modules.OctreeDeconvGnRelu(
-              num_embed, num_embed, group=32, kernel_size=[2], stride=2),
-      ])
+      self.vq_encoder = OctFormer(
+          channels=num_embed, num_blocks=num_vq_blocks, num_heads=num_heads,
+          patch_size=patch_size, dilation=dilation, attn_drop=drop_rate,
+          proj_drop=drop_rate, pos_emb=eval(pos_emb_type), nempty=False,
+          use_checkpoint=use_checkpoint, use_swin=use_swin)
+      self.downsample = ocnn.modules.OctreeConvGnRelu(
+          num_embed, num_embed, group=32, kernel_size=[2], stride=2)
+
+      self.vq_decoder = OctFormer(
+          channels=num_embed, num_blocks=num_vq_blocks, num_heads=num_heads,
+          patch_size=patch_size, dilation=dilation, attn_drop=drop_rate,
+          proj_drop=drop_rate, pos_emb=eval(pos_emb_type), nempty=False,
+          use_checkpoint=use_checkpoint, use_swin=use_swin)
+      self.upsample = ocnn.modules.OctreeDeconvGnRelu(
+          num_embed, num_embed, group=32, kernel_size=[2], stride=2)
 
     self.mask_ratio_generator = stats.truncnorm(
         (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
@@ -111,39 +114,43 @@ class MAR(nn.Module):
     mask[orders[:mask_len]] = 1
     return mask
 
-  def forward_vq_downsample(self, x, octree, depth):
-    resblock, downsample = self.vq_encoder
-    x = resblock(x, octree, depth)
-    x = downsample(x, octree, depth)
-    return x
-
-  def forward_vq_upsample(self, zq, octree, depth):
-    resblock, upsample = self.vq_decoder
-    zq = resblock(zq, octree, depth)
-    zq = upsample(zq, octree, depth)
-    return zq
-
-  def forward_model(self, x, octree, depth_list, nnum_split):
+  def forward_blocks(self, x, octree, blocks, depth_list):
     _, depth2batch_indices = get_depth2batch_indices(
         octree, depth_list)
-    use_vq_sample = self.use_vq_sample and nnum_split < x.shape[0]
-    if use_vq_sample:
-      x_split = x[:nnum_split]
-      x_vq = self.forward_vq_downsample(
-          x[nnum_split:], octree, depth_list[-1] + 1)
-      x = torch.cat([x_split, x_vq], dim=0)
-
     x = depth2batch(x, depth2batch_indices)
-    x = self.blocks(x, octree, depth_list)
-    x = self.ln_x(x)
+    x = blocks(x, octree, depth_list)
     x = batch2depth(x, depth2batch_indices)
+    return x
 
-    if use_vq_sample:
-      # skip connection
-      x_split = x[:nnum_split]
-      x_vq = x[nnum_split:] + x_vq
-      x_vq = self.forward_vq_upsample(x_vq, octree, depth_list[-1])
-      x = torch.cat([x_split, x_vq], dim=0)
+  def forward_model(self, x, octree, depth_low, depth_high, nnum_split):
+    # if only split signals, not use vq sample
+    apply_vq_sample = nnum_split < x.shape[0]
+    if self.use_vq_sample and apply_vq_sample:
+      depth_list_main = list(range(depth_low, depth_high)) + [depth_high - 1]
+    else:
+      depth_list_main = list(range(depth_low, depth_high + 1))
+
+    if self.use_vq_sample:
+      depth_list_vq = list(range(depth_low, depth_high + 1))
+      x = self.forward_blocks(x, octree, self.vq_encoder, depth_list_vq)
+      if apply_vq_sample:
+        x_split = x[:nnum_split]
+        x_vq = x[nnum_split:]
+        x_vq = self.downsample(x_vq, octree, depth_high)
+        x = torch.cat([x_split, x_vq], dim=0)
+
+    x = self.forward_blocks(
+        x, octree, self.blocks, depth_list_main)
+
+    if self.use_vq_sample:
+      if apply_vq_sample:
+        # skip connection
+        x_split = x[:nnum_split]
+        x_vq = x[nnum_split:] + x_vq
+        x_vq = self.upsample(x_vq, octree, depth_high - 1)
+        x = torch.cat([x_split, x_vq], dim=0)
+      x = self.forward_blocks(x, octree, self.vq_decoder, depth_list_vq)
+    x = self.ln_x(x)
     return x
 
   def forward(self, octree_in, depth_low, depth_high, category=None, split=None, vqvae=None):
@@ -172,11 +179,6 @@ class MAR(nn.Module):
       zq = self.vq_proj(zq)
       x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
 
-    if self.use_vq_sample:
-      depth_list = list(range(depth_low, depth_high)) + [depth_high - 1]
-    else:
-      depth_list = list(range(depth_low, depth_high + 1))
-
     batch_id = get_batch_id(octree_in, range(depth_low, depth_high + 1))
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
@@ -186,7 +188,7 @@ class MAR(nn.Module):
         mask.unsqueeze(1), batch_cond, x_token_embeddings)
 
     x = self.forward_model(
-        x_token_embeddings, octree_in, depth_list, nnum_split)
+        x_token_embeddings, octree_in, depth_low, depth_high, nnum_split)
 
     output = {}
     if split is not None:
@@ -247,11 +249,8 @@ class MAR(nn.Module):
     vq_code = None
     for d in range(depth_low, depth_high + 1):
       nnum_d = octree.nnum[d]
-      nnum_split = sum([octree.nnum[i] for i in range(depth_low, min(d + 1, depth_high))])
-      if self.use_vq_sample and d == depth_high:
-        depth_list = list(range(depth_low, d)) + [depth_high - 1]
-      else:
-        depth_list = list(range(depth_low, d + 1))
+      nnum_split = sum([octree.nnum[i]
+                       for i in range(depth_low, min(d + 1, depth_high))])
 
       mask = torch.ones(nnum_d, device=octree.device).bool()
       if d < depth_high:
@@ -274,7 +273,7 @@ class MAR(nn.Module):
 
       for i in tqdm(range(num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
-        x = self.forward_model(x, octree, depth_list, nnum_split)
+        x = self.forward_model(x, octree, depth_low, d, nnum_split)
         x = x[-nnum_d:, :]
 
         # mask ratio for the next round, following MaskGIT and MAGE.
