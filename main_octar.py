@@ -159,7 +159,7 @@ class OctarSolver(Solver):
 
     # print(
     #     f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.numel()} indices are different")
-    # self.export_results(octree_in, index + 1, gt_indices)
+    # self.export_results(octree_in, index + 1, gt_vq_code)
     self.export_results(octree_out, index, vq_code)
 
   def _init_octree_out(self, octree_in, depth_out):
