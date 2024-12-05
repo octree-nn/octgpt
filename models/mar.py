@@ -70,7 +70,7 @@ class MAR(nn.Module):
 
     if self.use_vq_sample:
       self.vq_encoder = OctFormer(
-          channels=num_embed, num_blocks=num_vq_blocks, num_heads=num_heads,
+          channels=num_embed, num_blocks=num_vq_blocks // 2, num_heads=num_heads,
           patch_size=patch_size, dilation=dilation, attn_drop=drop_rate,
           proj_drop=drop_rate, pos_emb=eval(pos_emb_type), nempty=False,
           use_checkpoint=use_checkpoint, use_swin=use_swin)
@@ -78,7 +78,7 @@ class MAR(nn.Module):
           num_embed, num_embed, group=32, kernel_size=[2], stride=2)
 
       self.vq_decoder = OctFormer(
-          channels=num_embed, num_blocks=num_vq_blocks, num_heads=num_heads,
+          channels=num_embed, num_blocks=num_vq_blocks // 2, num_heads=num_heads,
           patch_size=patch_size, dilation=dilation, attn_drop=drop_rate,
           proj_drop=drop_rate, pos_emb=eval(pos_emb_type), nempty=False,
           use_checkpoint=use_checkpoint, use_swin=use_swin)
