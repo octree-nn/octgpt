@@ -192,11 +192,11 @@ class NVQVAE(torch.nn.Module):
     self.pred_stage_nums = 3
     self.code_stage_nums = 4
 
-    self.enc_channels = [32, 32, 32, 64, 128, 256]
-    self.enc_resblk_nums = [1, 1, 2, 2, 4, 2]
+    self.enc_channels = [32, 32, 64, 128, 256, 512]
+    self.enc_resblk_nums = [2, 2, 2, 4, 8, 2]
 
-    self.dec_channels = [256, 128, 64, 32, 32, 32]
-    self.dec_resblk_nums = [2, 4, 2, 2, 1, 1]
+    self.dec_channels = [512, 256, 128, 64, 32, 32]
+    self.dec_resblk_nums = [2, 8, 4, 2, 2, 2]
 
   def get_quantizer(self, quantizer_type: str, embedding_sizes: int,
                     embedding_channels: int, group: int = 4):

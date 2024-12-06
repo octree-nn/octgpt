@@ -72,6 +72,10 @@ class VAESolver(Solver):
     output = self.model_forward(batch)
     output = {'test/' + key: val for key, val in output.items()}
     return output
+  
+  def test_epoch(self, epoch):
+    if epoch % 200 == 0:
+      super().test_epoch(epoch)
 
   def eval_step(self, batch):
     # forward the model
