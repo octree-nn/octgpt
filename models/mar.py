@@ -328,7 +328,7 @@ class MAR(nn.Module):
       if d < depth_high:
         split = split.long()
         octree = seq2octree(octree, split, d, d + 1)
-        export_octree(
-            octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
+        # export_octree(
+        #     octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
 
     return octree, vq_code

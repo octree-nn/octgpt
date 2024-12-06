@@ -93,6 +93,10 @@ class OctarSolver(Solver):
     self.model.eval()
     for iter in tqdm(range(0, 10000), ncols=80):
       index = self.world_size * iter + get_rank()
+      mesh_path = os.path.join(self.logdir, f"results/{index}.obj")
+      if os.path.exists(mesh_path):
+        print(mesh_path, "exists, skip")
+        continue
       self.generate_step(index)
       # self.generate_vq_step(index)
       if index > 2831:
