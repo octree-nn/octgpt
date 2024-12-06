@@ -4,7 +4,7 @@ BASE:
 SOLVER:
   run: evaluate
   logdir: logs/shapenet_vae_eval/vqvae
-  ckpt: logs/shapenet_vae/vqvae_airplane_b8/best_model.pth
+  # ckpt: logs/shapenet_vae/vqvae_airplane_b8/best_model.pth
 
 
 DATA:
