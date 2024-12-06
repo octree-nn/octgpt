@@ -74,7 +74,9 @@ class VAESolver(Solver):
     return output
   
   def test_epoch(self, epoch):
-    if epoch % 200 == 0:
+    # set test_every_epoch to 1, so that we can save checkpoints every epoch
+    # Test the model every 5 epochs
+    if epoch % 5 == 0:
       super().test_epoch(epoch)
 
   def eval_step(self, batch):
