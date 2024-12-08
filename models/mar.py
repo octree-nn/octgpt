@@ -154,26 +154,32 @@ class MAR(nn.Module):
     return x
 
   def forward(self, octree_in, depth_low, depth_high, category=None, split=None, vqvae=None):
-    x_token_embeddings = torch.empty(
-        (0, self.num_embed), device=octree_in.device)
     batch_size = octree_in.batch_size
 
     if category == None:
       category = torch.zeros(batch_size).long().to(octree_in.device)
     cond = self.class_emb(category)  # 1 x C
 
-    x_token_embeddings = torch.cat(
-        [x_token_embeddings, self.split_emb(split)])  # S x C
+    split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
     targets_split = copy.deepcopy(split)
-    nnum_split = x_token_embeddings.shape[0]
+    nnum_split = split_token_embeddings.shape[0]
 
     with torch.no_grad():
       vq_code = vqvae.extract_code(octree_in)
       # quantizer dose not affect by the order
       zq, indices, _ = vqvae.quantizer(vq_code)
       targets_vq = copy.deepcopy(indices)
-    zq = self.vq_proj(zq)
-    x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
+    vq_token_embeddings = self.vq_proj(zq)
+    nnum_vq = vq_token_embeddings.shape[0]
+
+    # x_token_embeddings: (nnum, C)
+    if self.vqvae_config.name.startswith("vqvae"): # (nnum_vq, C)
+      x_token_embeddings = torch.cat([split_token_embeddings, vq_token_embeddings], dim=0)
+    elif self.vqvae_config.name.startswith("nvqvae"): # (nnum, C)
+      vq_token_embeddings[:nnum_split] += split_token_embeddings
+      x_token_embeddings = vq_token_embeddings
+    else:
+      raise NotImplementedError
 
     batch_id = get_batch_id(octree_in, range(depth_low, depth_high + 1))
     seq_len = x_token_embeddings.shape[0]
@@ -183,6 +189,7 @@ class MAR(nn.Module):
     x_token_embeddings = torch.where(
         mask.unsqueeze(1), batch_cond, x_token_embeddings)
 
+    # forward model
     x = self.forward_model(
         x_token_embeddings, octree_in, depth_low, depth_high, nnum_split)
 
@@ -199,8 +206,8 @@ class MAR(nn.Module):
           mask_split.sum().float()
       
     # VQ accuracy
-    mask_vq = mask[nnum_split:]
-    vq_logits = self.vq_head(x[nnum_split:])
+    mask_vq = mask[-nnum_vq:]
+    vq_logits = self.vq_head(x[-nnum_vq:])
     vq_logits = vq_logits[mask_vq].reshape(-1, self.vq_size)
     targets_vq = targets_vq[mask_vq].reshape(-1)
     output['vq_loss'] = F.cross_entropy(
@@ -235,22 +242,17 @@ class MAR(nn.Module):
     cond = self.class_emb(category)  # 1 x C
 
     if token_embeddings is None:
-      token_embeddings = torch.empty(
-          (0, self.num_embed), device=octree.device)
+      token_embeddings = torch.empty((0, self.num_embed), device=octree.device)
+    vq_code = torch.empty((0, self.num_vq_embed), device=octree.device)
 
-    vq_code = None
     for d in range(depth_low, depth_high + 1):
       nnum_d = octree.nnum[d]
-      nnum_split = sum([octree.nnum[i]
-                       for i in range(depth_low, min(d + 1, depth_high))])
+      nnum_split = sum([octree.nnum[i] for i in range(depth_low, min(d + 1, depth_high))])
 
       mask = torch.ones(nnum_d, device=octree.device).bool()
-      if d < depth_high:
-        split = -1 * torch.ones(nnum_d, device=octree.device).long()
-      else:
-        vq_indices = -1 * \
-            torch.ones((nnum_d, self.vq_groups), device=octree.device).long()
-        vq_code = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
+      split_d = -1 * torch.ones(nnum_d, device=octree.device).long()
+      vq_indices_d = -1 * torch.ones((nnum_d, self.vq_groups), device=octree.device).long()
+      vq_code_d = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
       # fullly masked
       batch_id = get_batch_id(
           octree, range(depth_low, d + 1))
@@ -289,38 +291,41 @@ class MAR(nn.Module):
         temperature = start_temperature * \
             ((num_iters - i) / num_iters)
 
+        token_embedding_d[mask_to_pred] = 0.0
         if d < depth_high:
           split_logits = self.split_head(x)
           # remask tokens that have poor confidence
           if i > num_iters * self.remask_stage:
-            remask = self.get_remask(split_logits, split, mask)
+            remask = self.get_remask(split_logits, split_d, mask)
             mask_to_pred = mask_to_pred | remask
-
           ix = sample(split_logits[mask_to_pred], temperature=temperature)
-          split[mask_to_pred] = ix
-          token_embedding_d[mask_to_pred] = self.split_emb(ix)
-        else:
+          split_d[mask_to_pred] = ix
+          token_embedding_d[mask_to_pred] += self.split_emb(ix)
+        
+        if d == depth_high or self.vqvae_config.name == "nvqvae":
           vq_logits = self.vq_head(x)
           # remask tokens that have poor confidence
           if i > num_iters * self.remask_stage:
             vq_logits = vq_logits.reshape(-1, self.vq_groups, self.vq_size)
-            remask = self.get_remask(vq_logits, vq_indices, mask, topk=5)
+            remask = self.get_remask(vq_logits, vq_indices_d, mask, topk=5)
             mask_to_pred = mask_to_pred | remask
           vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
           ix = sample(vq_logits, temperature=temperature)
           ix = ix.reshape(-1, self.vq_groups)
-          vq_indices[mask_to_pred] = ix
+          vq_indices_d[mask_to_pred] = ix
           with torch.no_grad():
             zq = vqvae.quantizer.extract_code(ix)
-            vq_code[mask_to_pred] = zq
-            token_embedding_d[mask_to_pred] = self.vq_proj(zq)
+            vq_code_d[mask_to_pred] = zq
+            token_embedding_d[mask_to_pred] += self.vq_proj(zq)
 
       token_embeddings = torch.cat(
           [token_embeddings, token_embedding_d], dim=0)
       if d < depth_high:
-        split = split.long()
-        octree = seq2octree(octree, split, d, d + 1)
+        split_d = split_d.long()
+        octree = seq2octree(octree, split_d, d, d + 1)
         # export_octree(
         #     octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
+      if d == depth_high or self.vqvae_config.name == "nvqvae":
+        vq_code = torch.cat([vq_code, vq_code_d], dim=0)
 
     return octree, vq_code
