@@ -162,22 +162,18 @@ class MAR(nn.Module):
       category = torch.zeros(batch_size).long().to(octree_in.device)
     cond = self.class_emb(category)  # 1 x C
 
-    if split is not None:
-      x_token_embeddings = torch.cat(
-          [x_token_embeddings, self.split_emb(split)])  # S x C
-      targets_split = copy.deepcopy(split)
-      nnum_split = x_token_embeddings.shape[0]
-    else:
-      nnum_split = 0
+    x_token_embeddings = torch.cat(
+        [x_token_embeddings, self.split_emb(split)])  # S x C
+    targets_split = copy.deepcopy(split)
+    nnum_split = x_token_embeddings.shape[0]
 
-    if vqvae is not None:
-      with torch.no_grad():
-        vq_code = vqvae.extract_code(octree_in)
-        # quantizer dose not affect by the order
-        zq, indices, _ = vqvae.quantizer(vq_code)
-        targets_vq = copy.deepcopy(indices)
-      zq = self.vq_proj(zq)
-      x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
+    with torch.no_grad():
+      vq_code = vqvae.extract_code(octree_in)
+      # quantizer dose not affect by the order
+      zq, indices, _ = vqvae.quantizer(vq_code)
+      targets_vq = copy.deepcopy(indices)
+    zq = self.vq_proj(zq)
+    x_token_embeddings = torch.cat([x_token_embeddings, zq], dim=0)
 
     batch_id = get_batch_id(octree_in, range(depth_low, depth_high + 1))
     seq_len = x_token_embeddings.shape[0]
@@ -191,33 +187,29 @@ class MAR(nn.Module):
         x_token_embeddings, octree_in, depth_low, depth_high, nnum_split)
 
     output = {}
-    if split is not None:
-      mask_split = mask[:nnum_split]
-      split_logits = self.split_head(x[:nnum_split])
-      output['split_loss'] = F.cross_entropy(
-          split_logits[mask_split], targets_split[mask_split])
-      with torch.no_grad():
-        correct_top1 = self.get_correct_topk(
-            split_logits[mask_split], targets_split[mask_split], topk=1)
-        output['split_accuracy'] = correct_top1.sum().float() / \
-            mask_split.sum().float()
-    else:
-      output['split_loss'] = torch.tensor(0.0).to(octree_in.device)
-
-    if vqvae is not None:
-      mask_vq = mask[nnum_split:]
-      vq_logits = self.vq_head(x[nnum_split:])
-      vq_logits = vq_logits[mask_vq].reshape(-1, self.vq_size)
-      targets_vq = targets_vq[mask_vq].reshape(-1)
-      output['vq_loss'] = F.cross_entropy(
-          vq_logits, targets_vq)
-      # Top-k Accuracy
-      with torch.no_grad():
-        correct_top5 = self.get_correct_topk(vq_logits, targets_vq, topk=5)
-        output['top5_accuracy'] = correct_top5.sum().float() / \
-            (mask_vq.sum().float() * self.vq_groups)
-    else:
-      output['vq_loss'] = torch.tensor(0.0).to(split.device)
+    # split accuracy
+    mask_split = mask[:nnum_split]
+    split_logits = self.split_head(x[:nnum_split])
+    output['split_loss'] = F.cross_entropy(
+        split_logits[mask_split], targets_split[mask_split])
+    with torch.no_grad():
+      correct_top1 = self.get_correct_topk(
+          split_logits[mask_split], targets_split[mask_split], topk=1)
+      output['split_accuracy'] = correct_top1.sum().float() / \
+          mask_split.sum().float()
+      
+    # VQ accuracy
+    mask_vq = mask[nnum_split:]
+    vq_logits = self.vq_head(x[nnum_split:])
+    vq_logits = vq_logits[mask_vq].reshape(-1, self.vq_size)
+    targets_vq = targets_vq[mask_vq].reshape(-1)
+    output['vq_loss'] = F.cross_entropy(
+        vq_logits, targets_vq)
+    # Top-k Accuracy
+    with torch.no_grad():
+      correct_top5 = self.get_correct_topk(vq_logits, targets_vq, topk=5)
+      output['top5_accuracy'] = correct_top5.sum().float() / \
+          (mask_vq.sum().float() * self.vq_groups)
 
     return output
 

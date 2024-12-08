@@ -80,7 +80,6 @@ MODEL:
   full_depth: *full_depth
   depth_stop: 6
   vqvae_ckpt: saved_ckpt/vqvae_model.pth
-  enable_vqvae: True
   find_unused_parameters: True
   model_name: MAR
 

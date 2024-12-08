@@ -20,7 +20,6 @@ class OctarSolver(Solver):
     self.depth = FLAGS.MODEL.depth
     self.depth_stop = FLAGS.MODEL.depth_stop
     self.full_depth = FLAGS.MODEL.full_depth
-    self.enable_vqvae = FLAGS.MODEL.enable_vqvae
 
   def get_model(self, flags):
     # if flags.model_name == "GPT":
@@ -62,8 +61,8 @@ class OctarSolver(Solver):
     split_seq = utils.octree2seq(octree_in, self.full_depth, self.depth_stop)
     output = self.model(
         octree_in=octree_in, depth_low=self.full_depth, split=split_seq,
-        depth_high=self.depth_stop if self.enable_vqvae else self.depth_stop-1,
-        vqvae=self.vqvae_module if self.enable_vqvae else None)
+        depth_high=self.depth_stop,
+        vqvae=self.vqvae_module)
     losses = [val for key, val in output.items() if 'loss' in key]
     output['loss'] = torch.sum(torch.stack(losses))
     return output
@@ -109,27 +108,26 @@ class OctarSolver(Solver):
           self.logdir, f'results/octree_depth{d}'), index=index)
 
     # decode the octree
-    if self.enable_vqvae:
-      for d in range(self.depth_stop, self.depth):
-        split_zero_d = torch.zeros(
-            octree_out.nnum[d], device=octree_out.device).long()
-        octree_out.octree_split(split_zero_d, d)
-        octree_out.octree_grow(d + 1)
-      doctree_out = OctreeD(octree_out)
-      with torch.no_grad():
-        output = self.vqvae_module.decode_code(
-            vq_code, self.depth_stop, doctree_out,
-            copy.deepcopy(doctree_out), update_octree=True)
+    for d in range(self.depth_stop, self.depth):
+      split_zero_d = torch.zeros(
+          octree_out.nnum[d], device=octree_out.device).long()
+      octree_out.octree_split(split_zero_d, d)
+      octree_out.octree_grow(d + 1)
+    doctree_out = OctreeD(octree_out)
+    with torch.no_grad():
+      output = self.vqvae_module.decode_code(
+          vq_code, self.depth_stop, doctree_out,
+          copy.deepcopy(doctree_out), update_octree=True)
 
-      # extract the mesh
-      utils.create_mesh(
-          output['neural_mpu'],
-          os.path.join(self.logdir, f"results/{index}.obj"),
-          size=self.FLAGS.SOLVER.resolution,
-          bbmin=-self.FLAGS.SOLVER.sdf_scale,
-          bbmax=self.FLAGS.SOLVER.sdf_scale,
-          mesh_scale=self.FLAGS.DATA.test.point_scale,
-          save_sdf=self.FLAGS.SOLVER.save_sdf)
+    # extract the mesh
+    utils.create_mesh(
+        output['neural_mpu'],
+        os.path.join(self.logdir, f"results/{index}.obj"),
+        size=self.FLAGS.SOLVER.resolution,
+        bbmin=-self.FLAGS.SOLVER.sdf_scale,
+        bbmax=self.FLAGS.SOLVER.sdf_scale,
+        mesh_scale=self.FLAGS.DATA.test.point_scale,
+        save_sdf=self.FLAGS.SOLVER.save_sdf)
 
   @torch.no_grad()
   def generate_step(self, index):
@@ -139,7 +137,7 @@ class OctarSolver(Solver):
     octree_out, vq_code = self.model_module.generate(
         octree=octree_out,
         depth_low=self.full_depth, depth_high=self.depth_stop,
-        vqvae=self.vqvae_module if self.enable_vqvae else None)
+        vqvae=self.vqvae_module)
 
     self.export_results(octree_out, index, vq_code)
 
@@ -155,7 +153,7 @@ class OctarSolver(Solver):
         octree=octree_in,
         depth_low=self.full_depth, depth_high=self.depth_stop,
         token_embeddings=self.model_module.split_emb(split_seq),
-        vqvae=self.vqvae_module if self.enable_vqvae else None)
+        vqvae=self.vqvae_module)
 
     # vq_indices = self.vqvae_module.quantizer(vq_code)[1]
     # gt_vq_code = self.vqvae_module.extract_code(octree_in)
