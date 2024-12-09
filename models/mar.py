@@ -211,7 +211,7 @@ class MAR(nn.Module):
     if self.use_unpool_mask:
       start_tokens = cond[batch_id[:octree_in.nnum[depth_low]]]
       mask_tokens = self.unpooling_as_mask_tokens(
-          x_token_embeddings, start_tokens, octree_in, depth_low, depth_high)
+          x_token_embeddings, octree_in, depth_low, depth_high, start_tokens)
     else:
       mask_tokens = cond[batch_id]
     x_token_embeddings = torch.where(
