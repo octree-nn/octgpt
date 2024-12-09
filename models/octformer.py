@@ -404,8 +404,8 @@ class OctFormer(torch.nn.Module):
 
   def forward(self, data: torch.Tensor, octree: Octree, depth_list: int):
     data_length = data.shape[0]
-    octree = OctreeT(octree, data_length, self.patch_size, self.dilation, self.nempty,
-                     depth_list=depth_list,
-                     use_swin=self.use_swin)
+    if not isinstance(octree, OctreeT):
+      octree = OctreeT(octree, data_length, self.patch_size, self.dilation, 
+                       self.nempty, depth_list=depth_list, use_swin=self.use_swin)
     data = self.layers(data, octree)
     return data

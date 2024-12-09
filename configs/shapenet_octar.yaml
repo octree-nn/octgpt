@@ -107,11 +107,12 @@ MODEL:
     use_checkpoint: True
     use_swin: True
     use_vq_sample: False
+    use_unpool_mask: False
     num_vq_blocks: 2
     mask_ratio_min: 0.7
     remask_stage: 0.7
-    start_temperature: [1.4, 1.5, 0.5, 0.5]
-    num_iters: [64, 64, 128, 256]
+    start_temperature: [1.2, 1.3, 0.5, 0.5]
+    num_iters: [64, 128, 128, 256]
   
 
 LOSS:

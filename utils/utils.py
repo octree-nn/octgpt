@@ -21,7 +21,8 @@ import copy
 from plyfile import PlyData, PlyElement
 from scipy.spatial import cKDTree
 from ocnn.octree import Octree, Points
-from ocnn.nn import octree2voxel, octree_pad
+from ocnn.nn import octree2voxel, octree_pad, octree_depad
+from ocnn.utils import meshgrid
 from tqdm import tqdm
 # autopep8: on
 
@@ -420,12 +421,14 @@ def seq2octree(octree, seq, depth_low, depth_high, threshold=0.0):
     octree_out.octree_grow(d + 1)
   return octree_out
 
+
 def get_batch_id(octree, depth_list):
   batch_id = []
   for d in depth_list:
     batch_id.append(octree.batch_id(d))
   batch_id = torch.cat(batch_id, dim=0)
   return batch_id
+
 
 def get_depth2batch_indices(octree, depth_list):
   # Rearange data from depth-by-depth to batch-by-batch
@@ -477,3 +480,28 @@ def sample(logits, top_k=None, top_p=None, temperature=1.0):
 
   ix = torch.multinomial(probs, num_samples=1)
   return ix.squeeze(1)
+
+
+def octree_copy_unpool(data: torch.Tensor, octree: Octree, depth: int, nempty: bool = False):
+  r''' Performs octree max unpooling.
+
+  Args:
+    data (torch.Tensor): The input tensor.
+    octree (Octree): The corresponding octree.
+    depth (int): The depth of current data. After unpooling, the corresponding
+        depth increases by 1.
+  '''
+
+  if not nempty:
+    data = octree_depad(data, octree, depth)
+  num, channel = data.shape
+  out = torch.zeros(num, 8, channel, dtype=data.dtype, device=data.device)
+  i = torch.arange(num, dtype=torch.int, device=data.device)
+  k = torch.arange(channel, dtype=torch.int, device=data.device)
+  i, k = meshgrid(i, k, indexing='ij')
+  out[i, :, k] = data.unsqueeze(-1)
+  out = out.view(-1, channel)
+  if nempty:
+    out = octree_depad(out, octree, depth+1)
+  return out
+
