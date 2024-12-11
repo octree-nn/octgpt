@@ -119,21 +119,6 @@ class MAR(nn.Module):
     mask[orders[:mask_len]] = 1
     return mask
 
-  def unpooling_as_mask_tokens(self, x, octree, depth_low, depth_high, start_tokens=None):
-    # use tokens in d as mask value in d + 1
-    cur_nnum = 0
-    output = []
-    if start_tokens is not None:
-      output.append(start_tokens)
-    for d in range(depth_low, depth_high):
-      nnum_d = octree.nnum[d]
-      x_d = x[cur_nnum:cur_nnum + nnum_d]
-      # copy data from d to d + 1
-      x_d = octree_copy_unpool(x_d, octree, d)
-      output.append(x_d)
-      cur_nnum += nnum_d
-    return torch.cat(output, dim=0)
-
   def forward_blocks(self, x, octree, blocks, depth_list):
     _, depth2batch_indices = get_depth2batch_indices(
         octree, depth_list)
@@ -195,25 +180,14 @@ class MAR(nn.Module):
     nnum_vq = vq_token_embeddings.shape[0]
 
     # x_token_embeddings: (nnum, C)
-    if self.vqvae_config.name.startswith("vqvae"):  # (nnum_vq, C)
-      x_token_embeddings = torch.cat(
-          [split_token_embeddings, vq_token_embeddings], dim=0)
-    elif self.vqvae_config.name.startswith("nvqvae"):  # (nnum, C)
-      vq_token_embeddings[:nnum_split] += split_token_embeddings
-      x_token_embeddings = vq_token_embeddings
-    else:
-      raise NotImplementedError
+    x_token_embeddings = torch.cat(
+        [split_token_embeddings, vq_token_embeddings], dim=0)
 
     batch_id = get_batch_id(octree_in, range(depth_low, depth_high + 1))
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
     mask = self.random_masking(seq_len, orders).bool()
-    if self.use_unpool_mask:
-      start_tokens = cond[batch_id[:octree_in.nnum[depth_low]]]
-      mask_tokens = self.unpooling_as_mask_tokens(
-          x_token_embeddings, octree_in, depth_low, depth_high, start_tokens)
-    else:
-      mask_tokens = cond[batch_id]
+    mask_tokens = cond[batch_id]
     x_token_embeddings = torch.where(
         mask.unsqueeze(1), mask_tokens, x_token_embeddings)
 
@@ -336,8 +310,7 @@ class MAR(nn.Module):
           ix = sample(split_logits[mask_to_pred], temperature=temperature)
           split_d[mask_to_pred] = ix
           token_embedding_d[mask_to_pred] += self.split_emb(ix)
-
-        if d == depth_high or self.vqvae_config.name == "nvqvae":
+        else:
           vq_logits = self.vq_head(x)
           # remask tokens that have poor confidence
           if i > num_iters * self.remask_stage:
@@ -360,7 +333,7 @@ class MAR(nn.Module):
         octree = seq2octree(octree, split_d, d, d + 1)
         # export_octree(
         #     octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
-      if d == depth_high or self.vqvae_config.name == "nvqvae":
+      else:
         vq_code = torch.cat([vq_code, vq_code_d], dim=0)
 
     return octree, vq_code
