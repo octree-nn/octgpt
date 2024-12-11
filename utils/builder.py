@@ -49,7 +49,35 @@ def build_vae_model(flags):
       self.dec_enc_resblk_nums = [2, 4, 8, 2]
       self.dec_dec_channels = [512, 256, 128, 64, 32, 32]
       self.dec_dec_resblk_nums = [2, 4, 8, 2, 2, 2]
+ 
+  class VAEd5(VAE):
+    def config_network(self):
+      self.bottleneck = 2
+      self.mpu_stage_nums = 3
+      self.pred_stage_nums = 4
 
+      self.enc_channels = [32, 32, 64, 64]
+      self.enc_resblk_nums = [1, 1, 1, 2]
+
+      self.dec_enc_channels = [64, 128, 256]
+      self.dec_enc_resblk_nums = [2, 4, 2]
+      self.dec_dec_channels = [256, 128, 64, 32, 32, 32]
+      self.dec_dec_resblk_nums = [2, 4, 2, 2, 1, 1]
+ 
+  class VQVAEd5(VQVAE):
+    def config_network(self):
+      self.bottleneck = 2
+      self.mpu_stage_nums = 3
+      self.pred_stage_nums = 4
+
+      self.enc_channels = [32, 32, 64, 64]
+      self.enc_resblk_nums = [1, 1, 1, 2]
+
+      self.dec_enc_channels = [64, 128, 256]
+      self.dec_enc_resblk_nums = [2, 4, 2]
+      self.dec_dec_channels = [256, 128, 64, 32, 32, 32]
+      self.dec_dec_resblk_nums = [2, 4, 2, 2, 1, 1]
+ 
   if flags.name.lower() == 'vqvae_small':
     return VQVAEs(**flags)  # Small VQVAE with 2.5M parameters
   elif flags.name.lower() == 'vqvae_big':
@@ -59,7 +87,11 @@ def build_vae_model(flags):
   elif flags.name.lower() == 'vqvae_huge':
     return VQVAEh(**flags)  # Large VQVAE with 33.9M parameters
   elif flags.name.lower() == 'vae':
-    return VAE(**flags)     # Default VQVAE with 4.2M parameters
+    return VAE(**flags)     # Default VAE with 4.2M parameters
+  elif flags.name.lower() == 'vae_d5':
+    return VAEd5(**flags)   # Default depth-5 VAE with 4.52M parameters
+  elif flags.name.lower() == 'vqvae_d5':
+    return VQVAEd5(**flags) # Default depth-5 VQVAE with 4.54M parameters
   elif flags.name.lower() == 'nvqvae':
     return NVQVAE(**flags)     # Default NVAE
   else:
