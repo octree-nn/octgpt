@@ -107,7 +107,6 @@ MODEL:
     use_checkpoint: True
     use_swin: True
     use_vq_sample: False
-    use_unpool_mask: False
     num_vq_blocks: 2
     mask_ratio_min: 0.7
     remask_stage: 0.7
@@ -118,4 +117,4 @@ MODEL:
 LOSS:
   name: shapenet_vae_loss
   loss_type: sdf_reg_loss
-  vq_weight: 0.5
+  vq_weight: 0.1
