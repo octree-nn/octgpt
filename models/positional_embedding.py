@@ -54,14 +54,14 @@ def compute_mixed_cis(freqs: torch.Tensor, xyz: torch.Tensor, num_heads: int):
   N = xyz.shape[0]
   t_x, t_y, t_z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
   # No float 16 for this range
-  # with torch.amp.autocast("cuda", enabled=False):
-  freqs_x = (t_x.unsqueeze(-1) @
-             freqs[0].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
-  freqs_y = (t_y.unsqueeze(-1) @
-             freqs[1].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
-  freqs_z = (t_z.unsqueeze(-1) @
-             freqs[2].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
-  freqs_cis = torch.polar(torch.ones_like(freqs_x), freqs_x + freqs_y + freqs_z)
+  with torch.autocast("cuda", enabled=False):
+    freqs_x = (t_x.unsqueeze(-1) @
+              freqs[0].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
+    freqs_y = (t_y.unsqueeze(-1) @
+              freqs[1].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
+    freqs_z = (t_z.unsqueeze(-1) @
+              freqs[2].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
+    freqs_cis = torch.polar(torch.ones_like(freqs_x), freqs_x + freqs_y + freqs_z)
   return freqs_cis
 
 
