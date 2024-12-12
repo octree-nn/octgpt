@@ -12,7 +12,7 @@ from models.octformer import OctFormer, OctreeT
 from models.positional_embedding import SinPosEmb
 from models.vae import DiagonalGaussian
 from utils.utils import seq2octree, sample, depth2batch, batch2depth, \
-    get_depth2batch_indices, get_batch_id, export_octree, octree_copy_unpool
+    get_depth2batch_indices, get_batch_id, export_octree
 from utils.distributed import get_rank
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ class MAR(nn.Module):
     cond = self.class_emb(category)  # 1 x C
 
     split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
-    targets_split = copy.deepcopy(split)
+    targets_split = split.clone().detach()
     nnum_split = split_token_embeddings.shape[0]
 
     with torch.no_grad():
