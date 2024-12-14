@@ -50,6 +50,20 @@ def build_vae_model(flags):
       self.dec_dec_channels = [512, 256, 128, 64, 32, 32]
       self.dec_dec_resblk_nums = [2, 4, 8, 2, 2, 2]
  
+  class VQVAEd5h(VQVAE):
+    def config_network(self):
+      self.bottleneck = 1
+      self.mpu_stage_nums = 3
+      self.pred_stage_nums = 4
+
+      self.enc_channels = [32, 32, 64, 64]
+      self.enc_resblk_nums = [2, 2, 2, 2]
+
+      self.dec_enc_channels = [128, 256, 512]
+      self.dec_enc_resblk_nums = [4, 8, 2]
+      self.dec_dec_channels = [512, 256, 128, 64, 32, 32]
+      self.dec_dec_resblk_nums = [2, 4, 8, 2, 2, 2]
+ 
   class VAEd5(VAE):
     def config_network(self):
       self.bottleneck = 2
@@ -94,5 +108,9 @@ def build_vae_model(flags):
     return VQVAEd5(**flags) # Default depth-5 VQVAE with 4.54M parameters
   elif flags.name.lower() == 'nvqvae':
     return NVQVAE(**flags)     # Default NVAE
+  elif flags.name.lower() == 'vqvae_d5_huge':
+    model = VQVAEd5h(**flags)
+    print(sum(p.numel() for p in model.parameters()))
+    return model          # Huge depth-5 VQVAE with 34.3M parameters
   else:
     return VQVAE(**flags)   # Default VQVAE with 4.2M parameters
