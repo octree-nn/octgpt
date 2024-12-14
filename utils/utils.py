@@ -430,9 +430,15 @@ def get_batch_id(octree, depth_list):
   return batch_id
 
 
-def get_depth2batch_indices(octree, depth_list):
+def get_depth2batch_indices(octree, depth_list, buffer_size=None, mask=None):
   # Rearange data from depth-by-depth to batch-by-batch
   batch_id = get_batch_id(octree, depth_list)
+  if buffer_size is not None:
+    batch_buffer = torch.arange(octree.batch_size, device=octree.device).reshape(-1, 1)
+    batch_buffer = batch_buffer.repeat(1, buffer_size).reshape(-1)
+    batch_id = torch.cat([batch_buffer, batch_id])
+  if mask is not None:
+    batch_id = batch_id[~mask]
   batch_id_sorted, indices = torch.sort(batch_id)
   return batch_id_sorted, indices
 

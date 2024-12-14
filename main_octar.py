@@ -7,7 +7,7 @@ from thsolver.tracker import AverageTracker
 from ognn.octreed import OctreeD
 from utils import utils, builder
 from utils.distributed import get_rank
-from models.mar import MAR
+from models.mar import MAR, MARUNet, MAREncoderDecoder
 from datasets import get_shapenet_dataset
 from tqdm import tqdm
 import copy
@@ -22,12 +22,15 @@ class OctarSolver(Solver):
     self.depth_stop = FLAGS.MODEL.depth_stop
     self.full_depth = FLAGS.MODEL.full_depth
     self.enable_amp = FLAGS.SOLVER.enable_amp
+    self.scaler = None
 
   def get_model(self, flags):
-    # if flags.model_name == "GPT":
-    #   model = GPT(**flags.GPT)
     if flags.model_name == "MAR":
       model = MAR(vqvae_config=flags.VQVAE, **flags.GPT)
+    elif flags.model_name == "MARUNet":
+      model = MARUNet(vqvae_config=flags.VQVAE, **flags.GPT)
+    elif flags.model_name == "MAREncoderDecoder":
+      model = MAREncoderDecoder(vqvae_config=flags.VQVAE, **flags.GPT)
     else:
       raise NotImplementedError("Model not implemented")
 
@@ -51,7 +54,6 @@ class OctarSolver(Solver):
 
   def config_optimizer(self):
     super().config_optimizer()
-    self.scaler = None
     if self.enable_amp:
       self.scaler = torch.GradScaler()      
   

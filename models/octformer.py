@@ -8,6 +8,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch.nn.attention import flex_attention
 import ocnn
 from ocnn.octree import Octree
 from typing import Optional
@@ -18,9 +19,10 @@ from utils.utils import get_depth2batch_indices, depth2batch, batch2depth
 
 class OctreeT(Octree):
 
-  def __init__(self, octree: Octree, data_length: int, patch_size: int = 24,
-               dilation: int = 4, nempty: bool = True, use_swin: bool = True,
-               depth_list: list = None, **kwargs):
+  def __init__(self, octree: Octree, data_length: int, patch_size: int = 24, 
+               dilation: int = 4, nempty: bool = True, depth_list: list = None, 
+               use_swin: bool = True, use_flex: bool = False,
+               data_mask: torch.Tensor = None, buffer_size: int = 0, **kwargs):
     super().__init__(octree.depth, octree.full_depth)
     self.__dict__.update(octree.__dict__)
 
@@ -28,8 +30,11 @@ class OctreeT(Octree):
     self.dilation = dilation    # TODO dilation as a list
     self.nempty = nempty
     self.use_swin = use_swin
+    self.use_flex = use_flex
     self.depth_list = depth_list if depth_list != None else \
         list(range(self.full_depth, self.depth + 1))
+    self.data_mask = data_mask
+    self.buffer_size = buffer_size
     self.invalid_mask_value = -1e3
 
     self.block_num = patch_size * dilation
@@ -42,7 +47,7 @@ class OctreeT(Octree):
       self.swin_nnum_a = (torch.ceil(
           (self.nnum_t + self.swin_nnum_pad) / self.block_num) * self.block_num).int()
     self.batch_idx, self.indices = get_depth2batch_indices(
-        self, self.depth_list)
+        self, self.depth_list, buffer_size, self.data_mask)
     self.build_t()
 
   def build_t(self):
@@ -64,6 +69,10 @@ class OctreeT(Octree):
   def build_depth_idx(self):
     depth_idx = torch.cat([torch.ones(self.nnum[self.depth_list[i]], device=self.device).long() * i
                            for i in range(len(self.depth_list))])
+    depth_idx = torch.cat([torch.zeros(self.buffer_size * self.batch_size, 
+                                       device=self.device).long(), depth_idx])
+    if self.data_mask is not None:
+      depth_idx = depth_idx[~self.data_mask]
     depth_idx = depth2batch(depth_idx, self.indices)
     return depth_idx
 
@@ -118,6 +127,9 @@ class OctreeT(Octree):
       z = rescale_pos(z, scale)
       xyz.append(torch.stack([x, y, z], dim=1))
     xyz = torch.cat(xyz, dim=0).float()
+    xyz = torch.cat([torch.zeros(self.buffer_size * self.batch_size, 3, device=self.device), xyz])
+    if self.data_mask is not None:
+      xyz = xyz[~self.data_mask]
     xyz = depth2batch(xyz, self.indices)
     return xyz
 
@@ -206,7 +218,7 @@ class OctreeAttention(torch.nn.Module):
   def __init__(self, dim: int, patch_size: int, num_heads: int,
                qkv_bias: bool = True, qk_scale: Optional[float] = None,
                attn_drop: float = 0.0, proj_drop: float = 0.0,
-               dilation: int = 1, use_rpe: bool = False, use_flash: bool = True,
+               dilation: int = 1, use_rpe: bool = False, use_flex: bool = False,
                use_rope: bool = True, use_swin: bool = True, **kwargs):
     super().__init__()
     self.dim = dim
@@ -214,16 +226,16 @@ class OctreeAttention(torch.nn.Module):
     self.num_heads = num_heads
     self.dilation = dilation
     self.use_rpe = use_rpe
-    self.use_flash = use_flash
+    self.use_flex = use_flex
     self.use_rope = use_rope
     self.use_swin = use_swin
     self.scale = qk_scale or (dim // num_heads) ** -0.5
 
     self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
-    if self.use_flash:
-      self.attn_drop = attn_drop
+    if self.use_flex:
+      pass
     else:
-      self.attn_drop = torch.nn.Dropout(attn_drop)
+      self.attn_drop = attn_drop
     self.proj = torch.nn.Linear(dim, dim)
     self.proj_drop = torch.nn.Dropout(proj_drop)
     self.softmax = torch.nn.Softmax(dim=-1)
@@ -271,20 +283,21 @@ class OctreeAttention(torch.nn.Module):
     Q = K
     q, k, v = patchify_qkv(qkv)
 
-    if self.use_flash:
+    if self.use_flex:
+      flex_attention.flex_attention(q, k, v)
+    else:
       data = F.scaled_dot_product_attention(
           q, k, v, attn_mask=mask.unsqueeze(1),
           dropout_p=self.attn_drop if self.training else 0.0,
           scale=self.scale)
       data = data.transpose(1, 2).reshape(-1, C)
-    else:
-      # attn
-      attn = q @ k.transpose(-2, -1) * self.scale  # (N, H, K, K)
-      # attn = self.apply_rpe(attn, rel_pos)    # (N, H, K, K)
-      attn = attn + mask.unsqueeze(1)
-      attn = self.softmax(attn)
-      attn = self.attn_drop(attn)
-      data = (attn @ v).transpose(1, 2).reshape(-1, C)
+      # # attn
+      # attn = q @ k.transpose(-2, -1) * self.scale  # (N, H, K, K)
+      # # attn = self.apply_rpe(attn, rel_pos)    # (N, H, K, K)
+      # attn = attn + mask.unsqueeze(1)
+      # attn = self.softmax(attn)
+      # attn = self.attn_drop(attn)
+      # data = (attn @ v).transpose(1, 2).reshape(-1, C)
 
     # patch reverse
     if D > 1:    # dilation
@@ -387,13 +400,13 @@ class OctFormer(torch.nn.Module):
                drop_path: float = 0.5, attn_drop: float = 0.1, proj_drop: float = 0.1,
                pos_emb: torch.nn.Module = SinPosEmb,
                nempty: bool = False, use_checkpoint: bool = True,
-               use_swin: bool = False,
-               **kwargs):
+               use_swin: bool = False, use_flex: bool = True, **kwargs):
     super().__init__()
     self.patch_size = patch_size
     self.dilation = dilation
     self.nempty = nempty
     self.use_swin = use_swin
+    self.use_flex = use_flex
 
     self.layers = OctFormerStage(
         dim=channels, num_heads=num_heads, patch_size=patch_size,
@@ -402,10 +415,6 @@ class OctFormer(torch.nn.Module):
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
         use_checkpoint=use_checkpoint, use_swin=use_swin)
 
-  def forward(self, data: torch.Tensor, octree: Octree, depth_list: int):
-    data_length = data.shape[0]
-    if not isinstance(octree, OctreeT):
-      octree = OctreeT(octree, data_length, self.patch_size, self.dilation, 
-                       self.nempty, depth_list=depth_list, use_swin=self.use_swin)
+  def forward(self, data: torch.Tensor, octree: OctreeT):
     data = self.layers(data, octree)
     return data
