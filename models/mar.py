@@ -296,7 +296,7 @@ class MAR(nn.Module):
             vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
             ix = sample(vq_logits, top_k=5, temperature=temperature)
             ix = ix.reshape(-1, self.vq_groups)
-            vq_indices_d[mask_to_pred] = ix
+            vq_indices_d[mask_to_pred] = ix.long()
             with torch.no_grad():
               zq = vqvae.quantizer.extract_code(ix)
               vq_code_d[mask_to_pred] = zq
@@ -404,6 +404,7 @@ class MAREncoderDecoder(MAR):
     self.decoder_ln = nn.LayerNorm(self.num_embed)
   
   def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
+    batch_size = octree.batch_size
     depth_list = list(range(depth_low, depth_high + 1))
     buffer = self.cond.reshape(octree.batch_size, 1, -1)
     buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
@@ -425,5 +426,6 @@ class MAREncoderDecoder(MAR):
         buffer_size=self.buffer_size)
     x = self.forward_blocks(x, octreeT_decoder, self.decoder, depth_list)
     x = self.decoder_ln(x)
+    x = x[batch_size * self.buffer_size:]
 
     return x
