@@ -52,12 +52,13 @@ class OctreeT(Octree):
 
   def build_t(self):
     self.depth_idx = self.build_depth_idx()
-    self.patch_mask, self.dilate_mask = self.build_attn_mask()
-    self.patch_tf_mask, self.dilate_tf_mask = self.build_teacher_forcing_mask()
     self.xyz = self.build_xyz()
+
+    # self.patch_mask, self.dilate_mask = self.build_attn_mask()
+    self.patch_tf_mask, self.dilate_tf_mask = self.build_teacher_forcing_mask()
     if self.use_swin:
-      self.swin_patch_mask, self.swin_dilate_mask = self.build_attn_mask(
-          use_swin=True)
+      # self.swin_patch_mask, self.swin_dilate_mask = self.build_attn_mask(
+      #     use_swin=True)
       self.swin_patch_tf_mask, self.swin_dilate_tf_mask = \
           self.build_teacher_forcing_mask(use_swin=True)
 
@@ -99,16 +100,31 @@ class OctreeT(Octree):
     return patch_tf_mask, dilate_tf_mask
 
   def _calc_attn_mask(self, mask: torch.Tensor, cond="neq"):
-    attn_mask = mask.unsqueeze(2) - mask.unsqueeze(1)
-    if cond == "neq":
-      mask_label = attn_mask != 0
-    elif cond == "le":
-      mask_label = attn_mask < 0
+    if self.use_flex:
+      def flex_mask_mod(b, h, q_idx, kv_idx):
+        swin_mask = (mask[b, q_idx] != -1) and (mask[b, kv_idx] != -1)
+        if cond == "neq":
+          attn_mask = mask[b, q_idx] == mask[b, kv_idx]
+        elif cond == "le":
+          attn_mask = mask[b, q_idx] >= mask[b, kv_idx]
+        mask_label = attn_mask and swin_mask
+        return mask_label
+      flex_mask = flex_attention.create_block_mask(
+        flex_mask_mod, B=self.batch_size * self.dilation, H=None, 
+        Q_LEN=self.patch_size, KV_LEN=self.patch_size, device=self.device)
+      return flex_mask
     else:
-      raise ValueError("Invalid condition")
-    attn_mask = torch.zeros_like(attn_mask).masked_fill(
-        mask_label, self.invalid_mask_value)
-    return attn_mask
+      attn_mask = mask.unsqueeze(2) - mask.unsqueeze(1)
+      swin_mask = torch.logical_or(mask.unsqueeze(2) == -1, mask.unsqueeze(1) == -1)
+      if cond == "neq":
+        mask_label = (attn_mask != 0) | swin_mask
+      elif cond == "le":
+        mask_label = (attn_mask < 0) | swin_mask
+      else:
+        raise ValueError("Invalid condition")
+      attn_mask = torch.zeros_like(attn_mask).masked_fill(
+          mask_label, self.invalid_mask_value)
+      return attn_mask
 
   def build_xyz(self):
     max_scale = 2 ** (MAX_DEPTH + 1)
@@ -137,7 +153,7 @@ class OctreeT(Octree):
     assert data.shape[0] == self.nnum_t
 
     if use_swin:
-      head = data.new_full((self.swin_nnum_pad,) + data.shape[1:], fill_value)
+      head = data.new_full((self.swin_nnum_pad,) + data.shape[1:], -1)
       num = self.swin_nnum_a - self.nnum_t - self.swin_nnum_pad
       tail = data.new_full((num,) + data.shape[1:], fill_value)
       data = torch.cat([head, data, tail], dim=0)
@@ -232,10 +248,7 @@ class OctreeAttention(torch.nn.Module):
     self.scale = qk_scale or (dim // num_heads) ** -0.5
 
     self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
-    if self.use_flex:
-      pass
-    else:
-      self.attn_drop = attn_drop
+    self.attn_drop = attn_drop
     self.proj = torch.nn.Linear(dim, dim)
     self.proj_drop = torch.nn.Dropout(proj_drop)
     self.softmax = torch.nn.Softmax(dim=-1)
@@ -255,13 +268,19 @@ class OctreeAttention(torch.nn.Module):
     C = self.dim
     D = self.dilation
 
-    if D > 1:
-      mask = octree.dilate_mask if not self.use_swin else octree.swin_dilate_mask
-      mask += octree.dilate_tf_mask if not self.use_swin else octree.swin_dilate_tf_mask
+    if octree.use_flex:
+      if D > 1:
+        block_mask = octree.dilate_tf_mask if not self.use_swin else octree.swin_dilate_tf_mask
+      else:
+        block_mask = octree.patch_tf_mask if not self.use_swin else octree.swin_patch_tf_mask
     else:
-      mask = octree.patch_mask if not self.use_swin else octree.swin_patch_mask
-      mask += octree.patch_tf_mask if not self.use_swin else octree.swin_patch_tf_mask
-    mask = mask.float()
+      if D > 1:
+        # mask = octree.dilate_mask if not self.use_swin else octree.swin_dilate_mask
+        mask = octree.dilate_tf_mask if not self.use_swin else octree.swin_dilate_tf_mask
+      else:
+        # mask = octree.patch_mask if not self.use_swin else octree.swin_patch_mask
+        mask = octree.patch_tf_mask if not self.use_swin else octree.swin_patch_tf_mask
+      mask = mask.float()
 
     def patchify_qkv(qkv: torch.Tensor):
       # patch partition
@@ -284,7 +303,8 @@ class OctreeAttention(torch.nn.Module):
     q, k, v = patchify_qkv(qkv)
 
     if self.use_flex:
-      flex_attention.flex_attention(q, k, v)
+      data = flex_attention.flex_attention(q, k, v, block_mask, scale=self.scale)
+      data = data.transpose(1, 2).reshape(-1, C)
     else:
       data = F.scaled_dot_product_attention(
           q, k, v, attn_mask=mask.unsqueeze(1),

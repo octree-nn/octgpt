@@ -131,7 +131,7 @@ class MAR(nn.Module):
 
     if category == None:
       category = torch.zeros(batch_size).long().to(octree_in.device)
-    cond = self.class_emb(category)  # 1 x C
+    self.cond = self.class_emb(category)  # 1 x C
 
     split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
     targets_split = split.clone().detach()
@@ -159,7 +159,7 @@ class MAR(nn.Module):
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
     mask = self.random_masking(seq_len, orders).bool()
-    mask_tokens = cond[batch_id]
+    mask_tokens = self.cond[batch_id]
     x_token_embeddings = torch.where(
         mask.unsqueeze(1), mask_tokens, x_token_embeddings)
 
@@ -219,7 +219,7 @@ class MAR(nn.Module):
     batch_size = octree.batch_size
     if category == None:
       category = torch.zeros(batch_size).long().to(octree.device)
-    cond = self.class_emb(category)  # 1 x C
+    self.cond = self.class_emb(category)  # 1 x C
 
     if token_embeddings is None:
       token_embeddings = torch.empty((0, self.num_embed), device=octree.device)
@@ -230,6 +230,7 @@ class MAR(nn.Module):
       nnum_split = sum([octree.nnum[i]
                        for i in range(depth_low, min(d + 1, depth_high))])
 
+      mask = torch.zeros(token_embeddings.shape[0], device=octree.device).bool()
       mask_d = torch.ones(nnum_d, device=octree.device).bool()
       split_d = -1 * torch.ones(nnum_d, device=octree.device).long()
       vq_indices_d = -1 * \
@@ -239,7 +240,7 @@ class MAR(nn.Module):
       # fullly masked
       batch_id = get_batch_id(
           octree, range(depth_low, d + 1))
-      token_embedding_d = cond[batch_id][token_embeddings.shape[0]:]
+      token_embedding_d = self.cond[batch_id][token_embeddings.shape[0]:]
       orders = torch.randperm(nnum_d, device=octree.device)
 
       # set generate parameters
@@ -250,9 +251,8 @@ class MAR(nn.Module):
 
       for i in tqdm(range(num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
-        mask = torch.zeros(x.shape[0]).bool()
-        mask
-        x = self.forward_model(x, octree, depth_low, d, mask_d, nnum_split)
+        x = self.forward_model(x, octree, depth_low, d, nnum_split=nnum_split,
+                               mask=torch.cat([mask, mask_d]))
         x = x[-nnum_d:, :]
 
         # mask ratio for the next round, following MaskGIT and MAGE.
@@ -360,8 +360,8 @@ class MARUNet(MAR):
       depth_list_main = list(range(depth_low, depth_high + 1))
 
     depth_list_vq = list(range(depth_low, depth_high + 1))
-    octreeT_vq = OctreeT(octree, x.shape[0], self.patch_size, self.dilation,
-                          nempty=False, depth_list=depth_list_vq, use_swin=self.use_swin)
+    octreeT_vq = OctreeT(octree, x.shape[0], self.patch_size, self.dilation, nempty=False, 
+                         depth_list=depth_list_vq, use_swin=self.use_swin, use_flex=self.use_flex)
     x = self.forward_blocks(x, octreeT_vq, self.vq_encoder, depth_list_vq)
     if apply_vq_sample:
       x_split = x[:nnum_split]
@@ -396,7 +396,7 @@ class MAREncoderDecoder(MAR):
     self.encoder_ln = nn.LayerNorm(self.num_embed)
 
     self.decoder = OctFormer(
-        channels=self.num_embed, num_blocks=self.num_vq_blocks//2, num_heads=self.num_heads,
+        channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation, 
         attn_drop=self.drop_rate, proj_drop=self.drop_rate, 
         pos_emb=eval(self.pos_emb_type), nempty=False,
@@ -405,7 +405,8 @@ class MAREncoderDecoder(MAR):
   
   def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
     depth_list = list(range(depth_low, depth_high + 1))
-    buffer = torch.zeros(self.buffer_size * octree.batch_size, self.num_embed, device=x.device)
+    buffer = self.cond.reshape(octree.batch_size, 1, -1)
+    buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
     mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
     x = torch.cat([buffer, x], dim=0)
     mask = torch.cat([mask_buffer, mask], dim=0)
