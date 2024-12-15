@@ -1,5 +1,4 @@
 from models.vae import VQVAE, VAE
-from models.nvae import NVQVAE
 
 def build_vae_model(flags):
 
@@ -106,8 +105,6 @@ def build_vae_model(flags):
     return VAEd5(**flags)   # Default depth-5 VAE with 4.52M parameters
   elif flags.name.lower() == 'vqvae_d5':
     return VQVAEd5(**flags) # Default depth-5 VQVAE with 4.54M parameters
-  elif flags.name.lower() == 'nvqvae':
-    return NVQVAE(**flags)     # Default NVAE
   elif flags.name.lower() == 'vqvae_d5_huge':
     model = VQVAEd5h(**flags)
     print(sum(p.numel() for p in model.parameters()))

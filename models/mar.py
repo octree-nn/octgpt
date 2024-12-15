@@ -299,7 +299,7 @@ class MAR(nn.Module):
             vq_indices_d[mask_to_pred] = ix.long()
             with torch.no_grad():
               zq = vqvae.quantizer.extract_code(ix)
-              vq_code_d[mask_to_pred] = zq
+              vq_code_d[mask_to_pred] = zq.float()
               token_embedding_d[mask_to_pred] += self.vq_proj(zq)
           elif self.vqvae_config.name.startswith("vae"):
             vae_code = self.vq_head(x)
