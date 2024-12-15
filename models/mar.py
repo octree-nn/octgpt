@@ -294,7 +294,7 @@ class MAR(nn.Module):
               remask = self.get_remask(vq_logits, vq_indices_d, mask_d, topk=5)
               mask_to_pred = mask_to_pred | remask
             vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
-            ix = sample(vq_logits, top_k=5, temperature=temperature)
+            ix = sample(vq_logits, top_p=0.75, temperature=temperature)
             ix = ix.reshape(-1, self.vq_groups)
             vq_indices_d[mask_to_pred] = ix.long()
             with torch.no_grad():
