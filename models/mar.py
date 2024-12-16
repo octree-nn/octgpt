@@ -112,17 +112,17 @@ class MAR(nn.Module):
     mask[orders[:mask_len]] = 1
     return mask
 
-  def forward_blocks(self, x, octree: OctreeT, blocks, depth_list):
+  def forward_blocks(self, x, octree: OctreeT, blocks):
     x = depth2batch(x, octree.indices)
     x = blocks(x, octree)
     x = batch2depth(x, octree.indices)
     return x
   
-  def forward_model(self, x, octree, depth_low, depth_high, **kwargs):
+  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
     depth_list = list(range(depth_low, depth_high + 1))
     octreeT = OctreeT(octree, x.shape[0], self.patch_size, self.dilation,
         nempty=False, depth_list=depth_list, use_swin=self.use_swin)
-    x = self.forward_blocks(x, octreeT, self.blocks, depth_list)
+    x = self.forward_blocks(x, octreeT, self.blocks)
     x = self.ln_x(x)
     return x
 
@@ -362,7 +362,7 @@ class MARUNet(MAR):
     depth_list_vq = list(range(depth_low, depth_high + 1))
     octreeT_vq = OctreeT(octree, x.shape[0], self.patch_size, self.dilation, nempty=False, 
                          depth_list=depth_list_vq, use_swin=self.use_swin, use_flex=self.use_flex)
-    x = self.forward_blocks(x, octreeT_vq, self.vq_encoder, depth_list_vq)
+    x = self.forward_blocks(x, octreeT_vq, self.vq_encoder)
     if apply_vq_sample:
       x_split = x[:nnum_split]
       x_vq = x[nnum_split:]
@@ -372,7 +372,7 @@ class MARUNet(MAR):
     octreeT = OctreeT(octree, x.shape[0], self.patch_size, self.dilation,
         nempty=False, depth_list=depth_list_main, use_swin=self.use_swin)
     x = self.forward_blocks(
-        x, octreeT, self.blocks, depth_list_main)
+        x, octreeT, self.blocks)
 
     if apply_vq_sample:
       # skip connection
@@ -380,7 +380,7 @@ class MARUNet(MAR):
       x_vq = x[nnum_split:] + x_vq
       x_vq = self.upsample(x_vq, octree, depth_high - 1)
       x = torch.cat([x_split, x_vq], dim=0)
-    x = self.forward_blocks(x, octreeT_vq, self.vq_decoder, depth_list_vq)
+    x = self.forward_blocks(x, octreeT_vq, self.vq_decoder)
 
     x = self.ln_x(x)
     return x
@@ -417,14 +417,14 @@ class MAREncoderDecoder(MAR):
     octreeT_encoder = OctreeT(octree, x_enc.shape[0], self.patch_size, self.dilation,
         nempty=False, depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
         data_mask=mask, buffer_size=self.buffer_size)
-    x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, depth_list)
+    x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder)
     x_enc = self.encoder_ln(x_enc)
 
     x[~mask] = x_enc
     octreeT_decoder = OctreeT(octree, x.shape[0], self.patch_size, self.dilation,
         nempty=False, depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex, 
         buffer_size=self.buffer_size)
-    x = self.forward_blocks(x, octreeT_decoder, self.decoder, depth_list)
+    x = self.forward_blocks(x, octreeT_decoder, self.decoder)
     x = self.decoder_ln(x)
     x = x[batch_size * self.buffer_size:]
 
