@@ -59,9 +59,9 @@ def build_vae_model(flags):
       self.enc_channels = [32, 32, 64, 64]
       self.enc_resblk_nums = [2, 2, 2, 2]
 
-      self.dec_enc_channels = [128, 256, 512]
+      self.dec_enc_channels = [128, 256, 256]
       self.dec_enc_resblk_nums = [4, 8, 2]
-      self.dec_dec_channels = [512, 256, 128, 64, 32, 32]
+      self.dec_dec_channels = [256, 256, 128, 64, 32, 32]
       self.dec_dec_resblk_nums = [2, 4, 8, 2, 2, 2]
  
   class VAEd5(VAE):
@@ -111,6 +111,6 @@ def build_vae_model(flags):
   elif flags.name.lower() == 'vqvae_d5_huge':
     model = VQVAEd5h(**flags)
     print(sum(p.numel() for p in model.parameters()))
-    return model          # Huge depth-5 VQVAE with 34.3M parameters
+    return model          # Huge depth-5 VQVAE with 21.4M parameters
   else:
     return VQVAE(**flags)   # Default VQVAE with 4.2M parameters
