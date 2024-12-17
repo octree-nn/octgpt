@@ -112,6 +112,7 @@ MODEL:
     remask_stage: 0.7
     start_temperature: [1.4, 1.4, 0.5, 0.5]
     num_iters: [64, 128, 128, 256]
+    condition_type: None
   
 
 LOSS:

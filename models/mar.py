@@ -38,6 +38,7 @@ class MAR(nn.Module):
                start_temperature=1.0,
                remask_stage=0.9,
                vqvae_config=None,
+               condition_type="None",
                num_iters=256,
                **kwargs):
     super(MAR, self).__init__()
@@ -57,6 +58,7 @@ class MAR(nn.Module):
     self.start_temperature = start_temperature
     self.remask_stage = remask_stage
     self.num_iters = num_iters
+    self.condition_type = condition_type
     self.split_size = 2  # 0/1 indicates the split signals
     self.num_vq_embed = vqvae_config.embedding_channels
     self.vq_size = vqvae_config.embedding_sizes
@@ -64,6 +66,7 @@ class MAR(nn.Module):
 
     self.split_emb = nn.Embedding(self.split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
+    self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
     self.vq_proj = nn.Linear(self.num_vq_embed, num_embed)
 
     self._init_blocks()
@@ -78,6 +81,7 @@ class MAR(nn.Module):
         (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
 
     self.apply(self._init_weights)  # initialize weights
+    self._init_weights(self.mask_token)
     logger.info("number of parameters: %e", sum(p.numel()
                 for p in self.parameters()))
 
@@ -95,6 +99,8 @@ class MAR(nn.Module):
       module.weight.data.normal_(mean=0.0, std=0.02)
       if isinstance(module, nn.Linear) and module.bias is not None:
         module.bias.data.zero_()
+    elif isinstance(module, nn.Parameter):
+      module.data.normal_(mean=0.0, std=0.02)
     elif isinstance(module, nn.LayerNorm):
       module.bias.data.zero_()
       module.weight.data.fill_(1.0)
@@ -120,18 +126,27 @@ class MAR(nn.Module):
   
   def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
     depth_list = list(range(depth_low, depth_high + 1))
+    buffer = self.cond.reshape(octree.batch_size, 1, -1)
+    buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
+    mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
+    x = torch.cat([buffer, x], dim=0)
+    mask = torch.cat([mask_buffer, mask], dim=0)
+
     octreeT = OctreeT(octree, x.shape[0], self.patch_size, self.dilation,
-        nempty=False, depth_list=depth_list, use_swin=self.use_swin)
+        nempty=False, depth_list=depth_list, use_swin=self.use_swin, 
+        buffer_size=self.buffer_size)
     x = self.forward_blocks(x, octreeT, self.blocks)
     x = self.ln_x(x)
     return x
 
-  def forward(self, octree_in, depth_low, depth_high, category=None, split=None, vqvae=None):
+  def forward(self, octree_in, depth_low, depth_high, condition=None, split=None, vqvae=None):
     batch_size = octree_in.batch_size
 
-    if category == None:
-      category = torch.zeros(batch_size).long().to(octree_in.device)
-    self.cond = self.class_emb(category)  # 1 x C
+    if self.condition_type == "None":
+      condition = torch.zeros(batch_size).long().to(octree_in.device)
+      self.cond = self.class_emb(condition)  # 1 x C
+    elif self.condition_type == "category":
+      self.cond = self.class_emb(condition)
 
     split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
     targets_split = split.clone().detach()
@@ -155,13 +170,11 @@ class MAR(nn.Module):
     x_token_embeddings = torch.cat(
         [split_token_embeddings, vq_token_embeddings], dim=0)
 
-    batch_id = get_batch_id(octree_in, range(depth_low, depth_high + 1))
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
     mask = self.random_masking(seq_len, orders).bool()
-    mask_tokens = self.cond[batch_id]
     x_token_embeddings = torch.where(
-        mask.unsqueeze(1), mask_tokens, x_token_embeddings)
+        mask.unsqueeze(1), self.mask_token, x_token_embeddings)
 
     # forward model
     x = self.forward_model(
@@ -215,11 +228,13 @@ class MAR(nn.Module):
     return remask
 
   @torch.no_grad()
-  def generate(self, octree, depth_low, depth_high, token_embeddings=None, category=None, vqvae=None):
+  def generate(self, octree, depth_low, depth_high, token_embeddings=None, condition=None, vqvae=None):
     batch_size = octree.batch_size
-    if category == None:
-      category = torch.zeros(batch_size).long().to(octree.device)
-    self.cond = self.class_emb(category)  # 1 x C
+    if self.condition_type == "None":
+      condition = torch.zeros(batch_size).long().to(octree.device)
+      self.cond = self.class_emb(condition)  # 1 x C
+    elif self.condition_type == "category":
+      self.cond = self.class_emb(condition)
 
     if token_embeddings is None:
       token_embeddings = torch.empty((0, self.num_embed), device=octree.device)
