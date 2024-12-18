@@ -72,10 +72,7 @@ class MAR(nn.Module):
     self._init_blocks()
 
     self.split_head = nn.Linear(num_embed, self.split_size)
-    if self.vqvae_config.name.startswith("vqvae"):
-      self.vq_head = nn.Linear(num_embed, self.vq_size * self.vq_groups)
-    elif self.vqvae_config.name.startswith("vae"):
-      self.vq_head = nn.Linear(num_embed, self.num_vq_embed * 2)
+    self.vq_head = nn.Linear(num_embed, self.vq_size * self.vq_groups)
 
     self.mask_ratio_generator = stats.truncnorm(
         (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
@@ -153,16 +150,9 @@ class MAR(nn.Module):
     nnum_split = split_token_embeddings.shape[0]
 
     with torch.no_grad():
-      if self.vqvae_config.name.startswith("vqvae"):
-        vq_code = vqvae.extract_code(octree_in)
-        zq, indices, _ = vqvae.quantizer(vq_code)
-        targets_vq = copy.deepcopy(indices)
-      elif self.vqvae_config.name.startswith("vae"):
-        vae_code = vqvae.extract_code(octree_in)
-        targets_posterior = DiagonalGaussian(vae_code)
-        zq = targets_posterior.sample()
-      else:
-        raise ValueError("Invalid VQ-VAE type")
+      vq_code = vqvae.extract_code(octree_in)
+      zq, indices, _ = vqvae.quantizer(vq_code)
+      targets_vq = copy.deepcopy(indices)
     vq_token_embeddings = self.vq_proj(zq)
     nnum_vq = vq_token_embeddings.shape[0]
 
@@ -194,23 +184,16 @@ class MAR(nn.Module):
 
     # VQ accuracy
     mask_vq = mask[-nnum_vq:]
-    if self.vqvae_config.name.startswith("vqvae"):
-      vq_logits = self.vq_head(x[-nnum_vq:])
-      vq_logits = vq_logits[mask_vq].reshape(-1, self.vq_size)
-      targets_vq = targets_vq[mask_vq].reshape(-1)
-      output['vq_loss'] = F.cross_entropy(
-          vq_logits, targets_vq)
-      # Top-k Accuracy
-      with torch.no_grad():
-        correct_top5 = self.get_correct_topk(vq_logits, targets_vq, topk=5)
-        output['top5_accuracy'] = correct_top5.sum().float() / \
-            (mask_vq.sum().float() * self.vq_groups)
-    elif self.vqvae_config.name.startswith("vae"):
-      vae_code = self.vq_head(x[-nnum_vq:])
-      output['vq_loss'] = DiagonalGaussian(vae_code).kl(targets_posterior).mean()
-      output['vq_loss'] *= 0.1
-    else:
-      raise ValueError("Invalid VQ-VAE type")
+    vq_logits = self.vq_head(x[-nnum_vq:])
+    vq_logits = vq_logits[mask_vq].reshape(-1, self.vq_size)
+    targets_vq = targets_vq[mask_vq].reshape(-1)
+    output['vq_loss'] = F.cross_entropy(
+        vq_logits, targets_vq)
+    # Top-k Accuracy
+    with torch.no_grad():
+      correct_top5 = self.get_correct_topk(vq_logits, targets_vq, topk=5)
+      output['top5_accuracy'] = correct_top5.sum().float() / \
+          (mask_vq.sum().float() * self.vq_groups)
     return output
 
   def get_correct_topk(self, logits, targets, topk=1):
@@ -302,28 +285,19 @@ class MAR(nn.Module):
           split_d[mask_to_pred] = ix
           token_embedding_d[mask_to_pred] += self.split_emb(ix)
         else:
-          if self.vqvae_config.name.startswith("vqvae"):
-            vq_logits = self.vq_head(x)
-            if i > num_iters * self.remask_stage:
-              vq_logits = vq_logits.reshape(-1, self.vq_groups, self.vq_size)
-              remask = self.get_remask(vq_logits, vq_indices_d, mask_d, topk=5)
-              mask_to_pred = mask_to_pred | remask
-            vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
-            ix = sample(vq_logits, top_p=0.75, temperature=temperature)
-            ix = ix.reshape(-1, self.vq_groups)
-            vq_indices_d[mask_to_pred] = ix.long()
-            with torch.no_grad():
-              zq = vqvae.quantizer.extract_code(ix)
-              vq_code_d[mask_to_pred] = zq.float()
-              token_embedding_d[mask_to_pred] += self.vq_proj(zq)
-          elif self.vqvae_config.name.startswith("vae"):
-            vae_code = self.vq_head(x)
-            posterior = DiagonalGaussian(vae_code)
-            vae_code = posterior.sample()
-            vq_code_d[mask_to_pred] = vae_code[mask_to_pred]
-            token_embedding_d[mask_to_pred] += self.vq_proj(vae_code[mask_to_pred])
-          else:
-            raise ValueError("Invalid VQ-VAE type")
+          vq_logits = self.vq_head(x)
+          if i > num_iters * self.remask_stage:
+            vq_logits = vq_logits.reshape(-1, self.vq_groups, self.vq_size)
+            remask = self.get_remask(vq_logits, vq_indices_d, mask_d, topk=5)
+            mask_to_pred = mask_to_pred | remask
+          vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
+          ix = sample(vq_logits, top_p=0.75, temperature=temperature)
+          ix = ix.reshape(-1, self.vq_groups)
+          vq_indices_d[mask_to_pred] = ix.long()
+          with torch.no_grad():
+            zq = vqvae.quantizer.extract_code(ix)
+            vq_code_d[mask_to_pred] = zq.float()
+            token_embedding_d[mask_to_pred] += self.vq_proj(zq)
 
       token_embeddings = torch.cat(
           [token_embeddings, token_embedding_d], dim=0)
