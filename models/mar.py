@@ -102,7 +102,7 @@ class MAR(nn.Module):
       module.bias.data.zero_()
       module.weight.data.fill_(1.0)
 
-  def random_masking(self, seq_len, orders, mask_rate=None):
+  def get_mask(self, seq_len, orders, mask_rate=None):
     # generate token mask
     if mask_rate is None:
       mask_rate = self.mask_ratio_generator.rvs(1)[0]
@@ -114,6 +114,13 @@ class MAR(nn.Module):
     mask = torch.zeros(orders.shape[0], device=orders.device).long()
     mask[orders[:mask_len]] = 1
     return mask
+  
+  def random_masking(self, x, mask, octree, depth_list):
+    # mask_tokens = self.mask_token.repeat(x.shape[0], 1)
+    batch_id = get_batch_id(octree, depth_list)
+    mask_tokens = self.cond[batch_id]
+    x = torch.where(mask.bool().unsqueeze(1), mask_tokens, x)
+    return x
 
   def forward_blocks(self, x, octree: OctreeT, blocks):
     x = depth2batch(x, octree.indices)
@@ -123,6 +130,9 @@ class MAR(nn.Module):
   
   def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
     depth_list = list(range(depth_low, depth_high + 1))
+    # random masking
+    x = self.random_masking(x, mask, octree, depth_list)
+
     buffer = self.cond.reshape(octree.batch_size, 1, -1)
     buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
     mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
@@ -162,10 +172,8 @@ class MAR(nn.Module):
 
     seq_len = x_token_embeddings.shape[0]
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
-    mask = self.random_masking(seq_len, orders).bool()
-    x_token_embeddings = torch.where(
-        mask.unsqueeze(1), self.mask_token, x_token_embeddings)
-
+    mask = self.get_mask(seq_len, orders).bool()
+    
     # forward model
     x = self.forward_model(
         x_token_embeddings, octree_in, depth_low, depth_high, mask, nnum_split)
@@ -236,9 +244,7 @@ class MAR(nn.Module):
       vq_code_d = torch.zeros(nnum_d, self.num_vq_embed, device=octree.device)
 
       # fullly masked
-      batch_id = get_batch_id(
-          octree, range(depth_low, d + 1))
-      token_embedding_d = self.cond[batch_id][token_embeddings.shape[0]:]
+      token_embedding_d = torch.zeros(nnum_d, self.num_embed, device=octree.device)
       orders = torch.randperm(nnum_d, device=octree.device)
 
       # set generate parameters
@@ -305,7 +311,7 @@ class MAR(nn.Module):
         split_d = split_d.long()
         octree = seq2octree(octree, split_d, d, d + 1)
         # export_octree(
-        #     octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
+            # octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
       else:
         vq_code = torch.cat([vq_code, vq_code_d], dim=0)
 
@@ -349,6 +355,9 @@ class MARUNet(MAR):
       depth_list_main = list(range(depth_low, depth_high + 1))
 
     depth_list_vq = list(range(depth_low, depth_high + 1))
+    # random masking
+    x = self.random_masking(x, mask, octree, depth_list_vq)
+
     octreeT_vq = OctreeT(octree, x.shape[0], self.patch_size, self.dilation, nempty=False, 
                          depth_list=depth_list_vq, use_swin=self.use_swin, use_flex=self.use_flex)
     x = self.forward_blocks(x, octreeT_vq, self.vq_encoder)
@@ -395,6 +404,9 @@ class MAREncoderDecoder(MAR):
   def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
     batch_size = octree.batch_size
     depth_list = list(range(depth_low, depth_high + 1))
+    # random masking
+    x = self.random_masking(x, mask, octree, depth_list)
+    
     buffer = self.cond.reshape(octree.batch_size, 1, -1)
     buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
     mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
@@ -409,7 +421,7 @@ class MAREncoderDecoder(MAR):
     x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder)
     x_enc = self.encoder_ln(x_enc)
 
-    x[~mask] = x_enc
+    x[~mask] = x_enc 
     octreeT_decoder = OctreeT(octree, x.shape[0], self.patch_size, self.dilation,
         nempty=False, depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex, 
         buffer_size=self.buffer_size)
