@@ -1,18 +1,17 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 
-class BinarySphericalQuantizer(nn.Module):
+class BinarySphericalQuantizer(torch.nn.Module):
 
-  def __init__(self, embed_dim: int, gamma0: float = 1.0, gamma1: float = 1.0,
-               inv_temperature: float = 1.0):
+  def __init__(self, D: int, gamma0: float = 1.0, gamma1: float = 1.0,
+               inv_temperature: float = 1.0, **kwargs):
     super().__init__()
-    self.embed_dim = embed_dim
+    self.embed_dim = D
     self.gamma0 = gamma0    # loss weight for entropy penalty
     self.gamma1 = gamma1    # loss weight for entropy penalty
     self.inv_temperature = inv_temperature
-    self.register_buffer('basis', 2 ** torch.arange(embed_dim - 1, -1, -1))
+    self.register_buffer('basis', 2 ** torch.arange(D - 1, -1, -1))
 
   def quantize(self, z):
     assert z.shape[-1] == self.embed_dim
@@ -29,7 +28,7 @@ class BinarySphericalQuantizer(nn.Module):
     indices = self.code2index(zq.detach())
     zq = zq * (1.0 / self.embed_dim ** 0.5)
 
-    return zq, indices, entropy_penalty / self.inv_temperature,
+    return zq, indices, entropy_penalty / self.inv_temperature
 
   def soft_entropy_loss(self, z):
     r'''Compute the entropy loss for the soft quantization.'''
@@ -40,20 +39,17 @@ class BinarySphericalQuantizer(nn.Module):
 
     # macro average of the probability of each subgroup
     avg_prob = torch.mean(prob, dim=0)
-    codebook_entropy = self.get_entropy(avg_prob, dim=-1)
+    codebook_entropy = self.get_entropy(avg_prob, dim=-1).sum()
 
     # the approximation of the entropy is the sum of the entropy of each subgroup
-    return per_sample_entropy, codebook_entropy.sum()
+    return per_sample_entropy, codebook_entropy
 
   def get_entropy(self, probs, dim=-1):
     H = -(probs * torch.log(probs + 1e-8)).sum(dim=dim)
     return H
 
   def code2index(self, zhat):
-    r'''Converts a `code` to an index in the codebook.
-    Args:
-        zhat: A tensor of shape (..., C) containing the codes. must be in {-1, 1}
-    '''
+    r'''Converts a `code` to an index in the codebook. '''
     assert zhat.shape[-1] == self.embed_dim
     return ((zhat + 1) / 2 * self.basis).sum(axis=-1).to(torch.int64)
 
