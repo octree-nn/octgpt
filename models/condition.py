@@ -12,7 +12,7 @@ class ImageEncoder(nn.Module):
         self.encoder_type = encoder_type
         if isinstance(encoder_type, str):
             if encoder_type == "resnet":
-                self.encoder = resnet_model.resnet18(pretrained=True)
+                self.encoder = resnet_model.resnet18(pretrained=True).float()
             elif encoder_type == "vit":
                 self.encoder = timm.create_model("vit_base_patch16_224", pretrained=True)
             elif encoder_type == "clip":
@@ -42,14 +42,14 @@ class ImageEncoder(nn.Module):
         x = kornia.enhance.normalize(x, mean, std)
         return x
     
-    def forwarf(self, image=None):
+    def forward(self, image=None):
         c_mm = []
         image = image[:, :3]
         if self.encoder_type == 'resnet':
             bs = image.shape[0]
             image = self.resnet_prep(image)
             c_image = self.encoder(image)
-            p_image = torch.rand(bs, device=self.device) > 0.5
+            p_image = torch.rand(bs, device=image.device) > 0.5
             c_image = c_image * p_image[:, None, None]
             c_mm.append(c_image)
         elif self.encoder_type == 'clip':

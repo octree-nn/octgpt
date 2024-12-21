@@ -139,8 +139,8 @@ class TransformShape:
     
     ## Sketch Condition
     if self.flags.get('load_image'):
-      output['image'] = sample['image']
-      output['projection_matrix'] = sample['projection_matrix']
+      output['image'] = sample['image'].unsqueeze(0)
+      output['projection_matrix'] = sample['projection_matrix'].unsqueeze(0)
 
     
     return output
