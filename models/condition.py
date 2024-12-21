@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import Union
-from networks import resnet, clip
+from .networks import resnet_model, clip_model
 import timm 
 import kornia
 
@@ -12,11 +12,11 @@ class ImageEncoder(nn.Module):
         self.encoder_type = encoder_type
         if isinstance(encoder_type, str):
             if encoder_type == "resnet":
-                self.encoder = resnet.resnet18(pretrained=True)
+                self.encoder = resnet_model.resnet18(pretrained=True)
             elif encoder_type == "vit":
                 self.encoder = timm.create_model("vit_base_patch16_224", pretrained=True)
             elif encoder_type == "clip":
-                self.encoder = clip.CLIPEncoder()
+                self.encoder = clip_model.CLIPEncoder()
             else:
                 raise ValueError(f"Unknown encoder type: {encoder_type}, choose from ['resnet', 'vit', 'clip']")
         elif isinstance(encoder_type, nn.Module):
