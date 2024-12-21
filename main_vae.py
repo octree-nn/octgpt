@@ -72,7 +72,7 @@ class VAESolver(Solver):
     output = self.model_forward(batch)
     output = {'test/' + key: val for key, val in output.items()}
     return output
-  
+
   def test_epoch(self, epoch):
     torch.cuda.empty_cache()
     # set test_every_epoch to 1, so that we can save checkpoints every epoch
@@ -81,39 +81,27 @@ class VAESolver(Solver):
       super().test_epoch(epoch)
 
   def eval_step(self, batch):
-    
+
     # For data with 5 categories, evaluate random sampled data for time saving
     # import random
     # x = random.random()
     # if x > 0.2:
-    #   return 
-    
+    #   return
+
     # forward the model
     octree_in = batch['octree_in'].cuda()
     octree_out = OctreeD(octree_in)  # initialize
     # octree_out = self._init_octree_out(octree_in)
-    import copy
-    for d in range(6, 9):
-      octree_out = copy.deepcopy(octree_in)
-      octree_out.depth = d
-      octree_out = OctreeD(octree_out)
-      self.model.decoder.stages = d - octree_in.full_depth + 1
-      
-      # useless
-      # if d <= 6:
-      #   self.model.decoder.start_pred = d - octree_in.full_depth
-      
-      output = self.model(octree_in, octree_out, update_octree=True)
+    output = self.model(octree_in, octree_out, update_octree=True)
 
-      # extract the mesh
-      flags = self.FLAGS.DATA.test
-      filename = self._extract_filename(batch)
-      filename = filename.replace(self.logdir, os.path.join(self.logdir, f"depth_{d}"))
-      bbmin, bbmax = self._get_bbox(batch)
-      utils.create_mesh(
-          output['neural_mpu'], filename, size=flags.resolution,
-          bbmin=bbmin, bbmax=bbmax, mesh_scale=flags.point_scale,
-          save_sdf=flags.save_sdf)
+    # extract the mesh
+    flags = self.FLAGS.DATA.test
+    filename = self._extract_filename(batch)
+    bbmin, bbmax = self._get_bbox(batch)
+    utils.create_mesh(
+        output['neural_mpu'], filename, size=flags.resolution,
+        bbmin=bbmin, bbmax=bbmax, mesh_scale=flags.point_scale,
+        save_sdf=flags.save_sdf)
 
     # save the input point cloud
     filename = filename[:-4] + '.input.ply'
