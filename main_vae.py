@@ -74,24 +74,35 @@ class VAESolver(Solver):
     return output
   
   def test_epoch(self, epoch):
+    torch.cuda.empty_cache()
     # set test_every_epoch to 1, so that we can save checkpoints every epoch
     # Test the model every 5 epochs
     if epoch % 5 == 0:
       super().test_epoch(epoch)
 
   def eval_step(self, batch):
+    
+    # For data with 5 categories, evaluate random sampled data for time saving
+    # import random
+    # x = random.random()
+    # if x > 0.2:
+    #   return 
+    
     # forward the model
     octree_in = batch['octree_in'].cuda()
     octree_out = OctreeD(octree_in)  # initialize
     # octree_out = self._init_octree_out(octree_in)
     import copy
-    for d in range(3, 9):
+    for d in range(6, 9):
       octree_out = copy.deepcopy(octree_in)
       octree_out.depth = d
       octree_out = OctreeD(octree_out)
       self.model.decoder.stages = d - octree_in.full_depth + 1
-      if d <= 6:
-        self.model.decoder.start_pred = d - octree_in.full_depth
+      
+      # useless
+      # if d <= 6:
+      #   self.model.decoder.start_pred = d - octree_in.full_depth
+      
       output = self.model(octree_in, octree_out, update_octree=True)
 
       # extract the mesh
