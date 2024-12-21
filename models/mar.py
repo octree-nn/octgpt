@@ -61,9 +61,16 @@ class MAR(nn.Module):
     self.condition_type = condition_type
     self.split_size = 2  # 0/1 indicates the split signals
     self.num_vq_embed = vqvae_config.embedding_channels
-    self.vq_size = vqvae_config.embedding_sizes
-    self.vq_groups = vqvae_config.quantizer_group
-
+    
+    if vqvae_config.quantizer_type == "group-project":
+      self.vq_size = vqvae_config.embedding_sizes
+      self.vq_groups = vqvae_config.quantizer_group
+    elif vqvae_config.quantizer_type == "bsq":
+      self.vq_size = 2
+      self.vq_groups = vqvae_config.embedding_channels
+    else:
+      raise ValueError("Unsupported quantizer type")
+    
     self.split_emb = nn.Embedding(self.split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
     # self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
@@ -205,6 +212,7 @@ class MAR(nn.Module):
     return output
 
   def get_correct_topk(self, logits, targets, topk=1):
+    topk = min(topk, logits.shape[-1] - 1)
     topk = torch.topk(logits, topk, dim=-1).indices
     correct_topk = topk.eq(targets.unsqueeze(-1).expand_as(topk))
     return correct_topk
@@ -283,7 +291,6 @@ class MAR(nn.Module):
         temperature = start_temperature * \
             ((num_iters - i) / num_iters)
 
-        token_embedding_d[mask_to_pred] = 0.0
         if d < depth_high:
           split_logits = self.split_head(x)
           # remask tokens that have poor confidence
@@ -292,7 +299,7 @@ class MAR(nn.Module):
             mask_to_pred = mask_to_pred | remask
           ix = sample(split_logits[mask_to_pred], temperature=temperature)
           split_d[mask_to_pred] = ix
-          token_embedding_d[mask_to_pred] += self.split_emb(ix)
+          token_embedding_d[mask_to_pred] = self.split_emb(ix)
         else:
           vq_logits = self.vq_head(x)
           if i > num_iters * self.remask_stage:
@@ -300,13 +307,13 @@ class MAR(nn.Module):
             remask = self.get_remask(vq_logits, vq_indices_d, mask_d, topk=5)
             mask_to_pred = mask_to_pred | remask
           vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
-          ix = sample(vq_logits, top_p=0.75, temperature=temperature)
+          ix = sample(vq_logits, temperature=temperature)
           ix = ix.reshape(-1, self.vq_groups)
           vq_indices_d[mask_to_pred] = ix.long()
           with torch.no_grad():
             zq = vqvae.quantizer.extract_code(ix)
             vq_code_d[mask_to_pred] = zq.float()
-            token_embedding_d[mask_to_pred] += self.vq_proj(zq)
+            token_embedding_d[mask_to_pred] = self.vq_proj(zq).float()
 
       token_embeddings = torch.cat(
           [token_embeddings, token_embedding_d], dim=0)

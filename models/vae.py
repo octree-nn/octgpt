@@ -385,14 +385,15 @@ class BinarySphericalQuantizer(torch.nn.Module):
 
   def code2index(self, zhat):
     r'''Converts a `code` to an index in the codebook. '''
-    assert zhat.shape[-1] == self.embed_dim
-    return ((zhat + 1) / 2 * self.basis).sum(axis=-1).to(torch.int64)
+    # assert zhat.shape[-1] == self.embed_dim
+    # return ((zhat + 1) / 2 * self.basis).sum(axis=-1).to(torch.int64)
+    return ((zhat + 1) / 2).long()
 
   def index2code(self, indices):
     r'''Inverse of `indexes_to_codes`.'''
-    indices = indices.unsqueeze(-1)
-    binary_codes = torch.remainder(torch.floor_divide(indices, self.basis), 2)
-    return binary_codes * 2 - 1
+    # indices = indices.unsqueeze(-1)
+    # binary_codes = torch.remainder(torch.floor_divide(indices, self.basis), 2)
+    return indices * 2.0 - 1.0
 
   def extract_code(self, indices):
     z_q = self.index2code(indices)
