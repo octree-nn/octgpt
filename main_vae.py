@@ -81,13 +81,6 @@ class VAESolver(Solver):
       super().test_epoch(epoch)
 
   def eval_step(self, batch):
-
-    # For data with 5 categories, evaluate random sampled data for time saving
-    # import random
-    # x = random.random()
-    # if x > 0.2:
-    #   return
-
     # forward the model
     octree_in = batch['octree_in'].cuda()
     octree_out = OctreeD(octree_in)  # initialize
