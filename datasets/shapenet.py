@@ -1,11 +1,14 @@
 import os
 import ocnn
 import torch
+import torch.nn.functional as F
+import torchvision.transforms as transforms
 import numpy as np
+from PIL import Image
 
 from thsolver import Dataset
 from ocnn.octree import Octree, Points
-
+from .sketch_utils import Projection_List, Projection_List_zero
 
 class TransformShape:
 
@@ -141,9 +144,12 @@ class ReadFile:
   def __init__(self, flags):
     self.flags = flags
 
-  def __call__(self, filename):
+  def __call__(self, filename): #, uid=None):
     # load the input point cloud
     output = {}
+    
+    uid = '/'.join(filename.split('/')[-2:])
+    # print(uid)
     if self.flags.get('load_pointcloud'):
       filename_pc = os.path.join(filename, 'pointcloud.npz')
       raw = np.load(filename_pc)
@@ -158,9 +164,71 @@ class ReadFile:
       raw = np.load(filename_sdf)
       sdf = {'points': raw['points'], 'grad': raw['grad'], 'sdf': raw['sdf']}
       output['sdf'] = sdf
+    
+    # Load the sketch image
+    if self.flags.get('load_image'):
+      if uid is None:
+        raise ValueError('uid should be provided when loading image')
+      read_image = ReadSketch(self.flags)
+      img, pm, sketch_view = read_image(uid)
+      output['uid'] = uid
+      output['image'] = img
+      output['projection_matrix'] = pm
+      output['sketch_view'] = sketch_view
 
     return output
 
+
+SKETCH_PER_VIEW = 10
+class ReadSketch:
+  def __init__(self, flags, 
+               feature_drop_out: float = 0.1,
+               elevation_zero: bool = False):
+    self.flags = flags
+    self.feature_folder = os.path.join(flags.image_location, 'edge')
+    self.matrix_foler = os.path.join(flags.image_location, 'angles')
+    self.feature_drop_out = feature_drop_out
+    self.elevation_zero = elevation_zero 
+    if self.elevation_zero:
+      self.projection_list = Projection_List_zero
+    else:
+      self.projection_list = Projection_List
+    self.to_tensor = transforms.ToTensor()
+    self.normalize = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    self.resize = transforms.Resize((256, 256), antialias=False)
+  
+  def process_image(self, img):
+    img_t = self.to_tensor(img)
+    assert img_t.shape[0] == 4
+    _, oh, ow = img_t.shape
+    ls = max(oh, ow)
+    pad_h1, pad_h2 = (ls - oh) // 2, (ls - oh) - (ls - oh) // 2
+    pad_w1, pad_w2 = (ls - ow) // 2, (ls - ow) - (ls - ow) // 2
+    
+    img_t = F.pad(img_t[None, ...], (pad_w1, pad_w2, pad_h1, pad_h2), mode='constant', value=0)[0]
+    
+    img_t[:3] = self.normalize(img_t[:3])
+    img_t = self.resize(img_t)
+    return img_t
+  
+  def random_load_image(self, uid):
+    if 'input_image' in self.flags:
+      img = Image.open(self.flags.input_image).convert('RGBA')
+      sketch_view_index = int(self.flags.input_image.split("_")[-2])
+    else:
+      sketch_view_index = np.random.randint(0, 5 * SKETCH_PER_VIEW)
+      img = Image.open(os.path.join(
+        self.feature_folder, 
+        uid, 
+        f'edge_{sketch_view_index // SKETCH_PER_VIEW}_{sketch_view_index % SKETCH_PER_VIEW}.png')).convert('RGBA')
+    
+    img = self.to_tensor(img)
+    pm = self.projection_list[sketch_view_index // SKETCH_PER_VIEW]
+    projection_matrix = torch.from_numpy(np.expand_dims(pm, axis=0))
+    return img, projection_matrix, sketch_view_index // SKETCH_PER_VIEW
+
+  def __call__(self, uid):
+    return self.random_load_image(uid)
 
 def collate_func(batch):
   output = ocnn.dataset.CollateBatch(merge_points=False)(batch)
