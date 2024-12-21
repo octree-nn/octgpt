@@ -136,6 +136,13 @@ class TransformShape:
         samples[key] = torch.cat([samples[key], surface[key]], dim=0)
 
       output.update(samples)
+    
+    ## Sketch Condition
+    if self.flags.get('load_image'):
+      output['image'] = sample['image']
+      output['projection_matrix'] = sample['projection_matrix']
+
+    
     return output
 
 
@@ -239,7 +246,7 @@ def collate_func(batch):
     pos = torch.cat(output['pos'], dim=0)
     output['pos'] = torch.cat([pos, batch_idx], dim=1)
 
-  for key in ['grad', 'sdf', 'occu', 'weight', 'color']:
+  for key in ['grad', 'sdf', 'occu', 'weight', 'color', 'image', 'projection_matrix']:
     if key in output:
       output[key] = torch.cat(output[key], dim=0)
 
