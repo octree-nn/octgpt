@@ -9,9 +9,9 @@ from utils import utils, builder
 from utils.distributed import get_rank
 from models.mar import MAR, MARUNet, MAREncoderDecoder
 from datasets import get_shapenet_dataset
+from datasets.shapenet_utils import snc_synth_id_to_label_5
 from tqdm import tqdm
 import copy
-os.environ['TORCH_NCCL_BLOCKING_WAIT'] = '1'
 
 
 class OctarSolver(Solver):
@@ -21,6 +21,7 @@ class OctarSolver(Solver):
     self.depth = FLAGS.MODEL.depth
     self.depth_stop = FLAGS.MODEL.depth_stop
     self.full_depth = FLAGS.MODEL.full_depth
+    self.condition_type = FLAGS.MODEL.GPT.condition_type
     self.enable_amp = FLAGS.SOLVER.enable_amp
     self.scaler = None
 
@@ -55,14 +56,23 @@ class OctarSolver(Solver):
   def config_optimizer(self):
     super().config_optimizer()
     if self.enable_amp:
-      self.scaler = torch.GradScaler()      
-  
+      self.scaler = torch.GradScaler()
+
   def batch_to_cuda(self, batch):
     keys = ['octree', 'octree_in', 'octree_gt', 'pos', 'sdf',
             'grad', 'weight', 'occu', 'color']
     for key in keys:
       if key in batch:
         batch[key] = batch[key].cuda()
+      
+    if self.condition_type == "None":
+      batch['condition'] = None
+    elif self.condition_type == "category":
+      label = [snc_synth_id_to_label_5[filename.split("/")[0]]
+               for filename in batch['filename']]
+      batch['condition'] = torch.tensor(label, device=self.device)
+    else:
+      raise NotImplementedError("Condition type not implemented")
 
   def model_forward(self, batch):
     self.batch_to_cuda(batch)
@@ -71,8 +81,8 @@ class OctarSolver(Solver):
     split_seq = utils.octree2seq(octree_in, self.full_depth, self.depth_stop)
     output = self.model(
         octree_in=octree_in, depth_low=self.full_depth, split=split_seq,
-        depth_high=self.depth_stop,
-        vqvae=self.vqvae_module)
+        depth_high=self.depth_stop, vqvae=self.vqvae_module,
+        condition=batch['condition'])
     losses = [val for key, val in output.items() if 'loss' in key]
     output['loss'] = torch.sum(torch.stack(losses))
     return output
@@ -87,7 +97,7 @@ class OctarSolver(Solver):
       output = self.model_forward(batch)
     output = {'test/' + key: val for key, val in output.items()}
     return output
-  
+
   def train_epoch(self, epoch):
     self.model.train()
     if self.world_size > 1:
@@ -109,7 +119,7 @@ class OctarSolver(Solver):
       self.optimizer.zero_grad()
       with torch.autocast("cuda", enabled=self.enable_amp):
         output = self.train_step(batch)
-      
+
       if self.enable_amp:
         self.scaler.scale(output['train/loss']).backward()
         clip_grad = self.FLAGS.SOLVER.clip_grad
@@ -200,13 +210,15 @@ class OctarSolver(Solver):
   @torch.no_grad()
   def generate_step(self, index):
     # forward the model
+    batch = next(self.test_iter)
+    self.batch_to_cuda(batch)
     octree_out = ocnn.octree.init_octree(
         self.depth, self.full_depth, self.FLAGS.DATA.test.batch_size, self.device)
     with torch.autocast("cuda", enabled=self.enable_amp):
       octree_out, vq_code = self.model_module.generate(
           octree=octree_out,
           depth_low=self.full_depth, depth_high=self.depth_stop,
-          vqvae=self.vqvae_module)
+          vqvae=self.vqvae_module, condition=batch['condition'])
 
     self.export_results(octree_out, index, vq_code)
 
@@ -222,7 +234,7 @@ class OctarSolver(Solver):
           octree=octree_in,
           depth_low=self.full_depth, depth_high=self.depth_stop,
           token_embeddings=self.model_module.split_emb(split_seq),
-          vqvae=self.vqvae_module)
+          vqvae=self.vqvae_module, condition=batch['condition'])
 
     # vq_indices = self.vqvae_module.quantizer(vq_code)[1]
     # gt_vq_code = self.vqvae_module.extract_code(octree_in)
@@ -250,7 +262,7 @@ class OctarSolver(Solver):
     torch.save(model_dict, ckpt_name + '.model.pth')
     torch.save({'model_dict': model_dict, 'epoch': epoch,
                 'optimizer_dict': self.optimizer.state_dict(),
-                'scheduler_dict': self.scheduler.state_dict(), 
+                'scheduler_dict': self.scheduler.state_dict(),
                 'scaler_dict': self.scaler.state_dict() if self.enable_amp else None}, ckpt_name + '.solver.tar')
 
   def load_checkpoint(self):
