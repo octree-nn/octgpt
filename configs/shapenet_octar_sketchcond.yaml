@@ -53,7 +53,7 @@ DATA:
 
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
-    batch_size: 1
+    batch_size: 1   # !!Note. Batch size only support 1 currently, to avoid inter-batch condition mix
     shuffle: True
 
   test:
@@ -77,7 +77,7 @@ DATA:
     load_image: *load_image
     image_location: *image_location
 
-    batch_size: 1
+    batch_size: 1   # !!Note. Batch size only support 1 currently, to avoid inter-batch condition mix
     load_pointcloud: *load_pointcloud
     load_sdf: *load_sdf
     shuffle: False
