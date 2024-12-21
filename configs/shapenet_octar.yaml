@@ -40,7 +40,7 @@ DATA:
     # sdf & color samples
     volume_sample_num: &volume_sample_num 10000
     surface_sample_num: &surface_sample_num 10000
-    max_points: 120000
+    # max_points: 120000
 
     # no data augmentation
     distort: &distort False

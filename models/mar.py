@@ -182,8 +182,7 @@ class MAR(nn.Module):
     # split accuracy
     mask_split = mask[:nnum_split]
     split_logits = self.split_head(x[:nnum_split])
-    # output['split_loss'] = F.cross_entropy(split_logits[mask_split], targets_split[mask_split])
-    output['split_loss'] = focal_loss(
+    output['split_loss'] = F.cross_entropy(
         split_logits[mask_split], targets_split[mask_split])
     with torch.no_grad():
       correct_top1 = self.get_correct_topk(
@@ -444,7 +443,6 @@ def focal_loss(inputs, targets, alpha=0.25, gamma=2):
   BCE_loss = F.cross_entropy(inputs, targets, reduction='none')
   # prevents nan as pt -> +inf when the initial loss is high
   pt = torch.exp(-BCE_loss)
-  alpha = torch.tensor([alpha, 1 - alpha], device=inputs.device)
-  alpha = alpha[targets]
-  F_loss = alpha * (1 - pt) ** gamma * BCE_loss
+  alpha_t = alpha * (1.0 - targets) + (1.0 - alpha) * targets
+  F_loss = alpha_t * (1 - pt) ** gamma * BCE_loss
   return torch.mean(F_loss)
