@@ -13,6 +13,7 @@ SOLVER:
   type: adamw
   weight_decay: 0.01  # default value of adamw
   lr: 0.0005
+  use_amp: True
 
   # learning rate
   lr_type: poly

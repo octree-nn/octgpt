@@ -14,7 +14,7 @@ SOLVER:
   weight_decay: 0.01  # default value of adamw
   lr: 0.0001           # default value of adamw
   rand_seed: 0
-  enable_amp: True
+  use_amp: True
 
   # learning rate
   lr_type: constant

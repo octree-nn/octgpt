@@ -117,9 +117,9 @@ class Decoder(torch.nn.Module):
     convs = {depth: code}  # initialize `convs` to save convolution features
     for i in range(self.encoder_stages):
       d = depth - i
-      convs[d] = self.encoder[i](convs[d], octree, d)
+      convs[d] = self.encoder[i](convs[d].to(code.dtype), octree, d)
       if i < self.encoder_stages - 1:
-        convs[d-1] = self.downsample[i](convs[d], octree, d)
+        convs[d-1] = self.downsample[i](convs[d].to(code.dtype), octree, d)
     return convs
 
   def octree_decoder(self, convs: dict, octree_in: OctreeD, octree_out: OctreeD,
