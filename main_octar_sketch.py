@@ -13,7 +13,7 @@ from datasets.shapenet_utils import snc_synth_id_to_label_5
 from tqdm import tqdm
 import copy
 from models.condition import ImageEncoder
-
+import cv2
 
 class OctarCondSolver(Solver):
 
@@ -171,9 +171,14 @@ class OctarCondSolver(Solver):
       train_tracker.log(epoch, self.summary_writer)
 
   def test_epoch(self, epoch):
-    super().test_epoch(epoch)
-    # generate the mesh
-    self.generate_step(epoch + get_rank())
+    
+    if epoch % 5 == 0 or epoch == 1:
+      super().test_epoch(epoch)
+      # generate the mesh
+      try:
+        self.generate_step(epoch + get_rank())
+      except:
+        pass
 
   def generate(self):
     self.manual_seed()
@@ -193,7 +198,7 @@ class OctarCondSolver(Solver):
       if index > 2831:
         break
 
-  def export_results(self, octree_out, index, vq_code=None):
+  def export_results(self, octree_out, index, vq_code=None, image=None):
     # export the octree
     for d in range(self.full_depth + 1, self.depth_stop + 1):
       utils.export_octree(octree_out, d, os.path.join(
@@ -221,6 +226,13 @@ class OctarCondSolver(Solver):
         mesh_scale=self.FLAGS.DATA.test.point_scale,
         save_sdf=self.FLAGS.SOLVER.save_sdf)
 
+    # Save the image
+    if image is not None:
+      image = image[0][:3].transpose(1, 2, 0) * 255
+      image = image.astype('uint8')
+      image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+      cv2.imwrite(os.path.join(self.logdir, f"results/{index}.png"), image)
+
   @torch.no_grad()
   def generate_step(self, index):
     # forward the model
@@ -234,7 +246,7 @@ class OctarCondSolver(Solver):
           depth_low=self.full_depth, depth_high=self.depth_stop,
           vqvae=self.vqvae_module, condition=batch['condition'])
 
-    self.export_results(octree_out, index, vq_code)
+    self.export_results(octree_out, index, vq_code, batch['image'].cpu().numpy())
 
   @torch.no_grad()
   def generate_vq_step(self, index):

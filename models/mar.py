@@ -49,7 +49,7 @@ class MAR(nn.Module):
     self.num_blocks = num_blocks
     self.patch_size = patch_size
     self.dilation = dilation
-    self.buffer_size = buffer_size
+    self.buffer_size = buffer_size if condition_type in ['None', 'category'] else 0
     self.drop_rate = drop_rate
     self.pos_emb_type = pos_emb_type
     self.use_checkpoint = use_checkpoint
@@ -438,18 +438,20 @@ class MAREncoderDecoder(MAR):
 
     x_enc = x.clone()
     x_enc = x_enc[~mask]
-    octreeT_encoder = OctreeT(
-        octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
-        depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
-        data_mask=mask, buffer_size=self.buffer_size if self.condition_type in ['None', 'category'] else 0)
-    x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder)
-    x_enc = self.encoder_ln(x_enc)
-
-    x[~mask] = x_enc
+    
+    if len(x_enc):
+      octreeT_encoder = OctreeT(
+          octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
+          depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
+          data_mask=mask, buffer_size=self.buffer_size)
+      x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder)
+      x_enc = self.encoder_ln(x_enc)
+      x[~mask] = x_enc
+    
     octreeT_decoder = OctreeT(
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
         depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
-        buffer_size=self.buffer_size if self.condition_type in ['None', 'category'] else 0)
+        buffer_size=self.buffer_size)
     x = self.forward_blocks(x, octreeT_decoder, self.decoder)
     x = self.decoder_ln(x)
     x = x[batch_size * self.buffer_size:]
