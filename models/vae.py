@@ -340,17 +340,21 @@ class DiagonalGaussian(object):
 class BinarySphericalQuantizer(torch.nn.Module):
 
   def __init__(self, D: int, gamma0: float = 1.0, gamma1: float = 1.0,
-               inv_temperature: float = 1.0, **kwargs):
+               inv_temperature: float = 1.0, rnd_flip: float = 0.0, **kwargs):
     super().__init__()
     self.embed_dim = D
     self.gamma0 = gamma0    # loss weight for entropy penalty
     self.gamma1 = gamma1    # loss weight for entropy penalty
+    self.rnd_flip = rnd_flip
     self.inv_temperature = inv_temperature
     self.register_buffer('basis', 2 ** torch.arange(D - 1, -1, -1))
 
   def quantize(self, z):
     assert z.shape[-1] == self.embed_dim
     zhat = (z > 0) * 2 - 1
+    if self.training and self.rnd_flip > 0:
+      flip = (torch.rand_like(z) > self.rnd_flip) * 2 - 1
+      zhat = zhat * flip
     return z + (zhat - z).detach()
 
   def forward(self, z):
