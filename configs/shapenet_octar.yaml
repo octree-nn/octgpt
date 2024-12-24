@@ -15,6 +15,7 @@ SOLVER:
   lr: 0.0001           # default value of adamw
   rand_seed: 0
   use_amp: True
+  empty_cache: True
 
   # learning rate
   lr_type: constant
@@ -40,7 +41,7 @@ DATA:
     # sdf & color samples
     volume_sample_num: &volume_sample_num 10000
     surface_sample_num: &surface_sample_num 10000
-    # max_points: 120000
+    max_points: 120000
 
     # no data augmentation
     distort: &distort False
