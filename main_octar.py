@@ -40,7 +40,7 @@ class OctarSolver(Solver):
     utils.set_requires_grad(vqvae, False)
 
     # load the pretrained vqvae
-    checkpoint = torch.load(flags.vqvae_ckpt, weights_only=True)
+    checkpoint = torch.load(flags.vqvae_ckpt, weights_only=True, map_location="cuda")
     vqvae.load_state_dict(checkpoint)
     print("Load VQVAE from", flags.vqvae_ckpt)
 
@@ -95,6 +95,8 @@ class OctarSolver(Solver):
     return output
 
   def test_epoch(self, epoch):
+    if epoch % 5 != 0:
+      return
     super().test_epoch(epoch)
     # generate the mesh
     self.generate_step(epoch + get_rank())
