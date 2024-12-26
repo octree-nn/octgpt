@@ -26,7 +26,7 @@ DATA:
     # octree building
     depth: &depth 8
     full_depth: &full_depth 3
-    point_scale: &point_scale 0.5  # the scale of point clouds
+    points_scale: &points_scale 0.5  # the scale of point clouds
 
     # sdf & color samples
     volume_sample_num: &volume_sample_num 10000
@@ -42,7 +42,7 @@ DATA:
     filelist: data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: True
     load_sdf: True
-    sdf_file_num: 8
+    sdf_file_num: &sdf_file_num 8
     batch_size: 2
     shuffle: True
 
@@ -52,7 +52,7 @@ DATA:
     # octree building
     depth: *depth
     full_depth: *full_depth
-    point_scale: *point_scale
+    points_scale: *points_scale
 
     # sdf & color samples
     volume_sample_num: *volume_sample_num
@@ -67,7 +67,7 @@ DATA:
     batch_size: 1
     load_pointcloud: True
     load_sdf: True
-    sdf_file_num: 8
+    sdf_file_num: *sdf_file_num
     shuffle: False
 
 

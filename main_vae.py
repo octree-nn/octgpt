@@ -93,13 +93,13 @@ class VAESolver(Solver):
     bbmin, bbmax = self._get_bbox(batch)
     utils.create_mesh(
         output['neural_mpu'], filename, size=flags.resolution,
-        bbmin=bbmin, bbmax=bbmax, mesh_scale=flags.point_scale,
+        bbmin=bbmin, bbmax=bbmax, mesh_scale=flags.points_scale,
         save_sdf=flags.save_sdf)
 
     # save the input point cloud
     filename = filename[:-4] + '.input.ply'
     points = batch['points_in'][0]
-    points.points *= flags.point_scale
+    points.points *= flags.points_scale
     utils.points2ply(filename, points)
 
   def _extract_filename(self, batch):

@@ -15,13 +15,9 @@ SOLVER:
   lr: 0.0001           # default value of adamw
   rand_seed: 0
   use_amp: True
-  empty_cache: True
 
   # learning rate
   lr_type: constant
-  # lr_type: step_warmup
-  # warmup_epoch: 20
-  # milestones: (200,)
   step_size: (160,240)
 
   # sdf
@@ -36,7 +32,7 @@ DATA:
     # octree building
     depth: &depth 8
     full_depth: &full_depth 3
-    point_scale: &point_scale 0.5  # the scale of point clouds
+    points_scale: &points_scale 0.5  # the scale of point clouds
 
     # sdf & color samples
     volume_sample_num: &volume_sample_num 10000
@@ -60,7 +56,7 @@ DATA:
     # octree building
     depth: *depth
     full_depth: *full_depth
-    point_scale: *point_scale
+    points_scale: *points_scale
 
     # sdf & color samples
     volume_sample_num: *volume_sample_num

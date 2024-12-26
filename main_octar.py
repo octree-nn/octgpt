@@ -144,7 +144,7 @@ class OctarSolver(Solver):
         size=self.FLAGS.SOLVER.resolution,
         bbmin=-self.FLAGS.SOLVER.sdf_scale,
         bbmax=self.FLAGS.SOLVER.sdf_scale,
-        mesh_scale=self.FLAGS.DATA.test.point_scale,
+        mesh_scale=self.FLAGS.DATA.test.points_scale,
         save_sdf=self.FLAGS.SOLVER.save_sdf)
 
   @torch.no_grad()

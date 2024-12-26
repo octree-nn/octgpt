@@ -14,7 +14,7 @@ class TransformShape:
 
     self.volume_sample_num = flags.volume_sample_num
     self.surface_sample_num = flags.surface_sample_num
-    self.points_scale = 0.5  # the points are in [-0.5, 0.5]
+    self.points_scale = flags.points_scale  # the points are in [-0.5, 0.5]
     self.noise_std = 0.005
     self.tsdf = 0.05         # truncation of SDF
 
