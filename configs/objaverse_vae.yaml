@@ -1,0 +1,86 @@
+SOLVER:
+  gpu: 0,
+  run: train
+
+  logdir: logs/shapenet_vae/vqvae
+  max_epoch: 300
+  test_every_epoch: 20
+  log_per_iter: 20
+  ckpt_num: 40
+  port: 10001
+
+  # optimizer
+  type: adamw
+  weight_decay: 0.01  # default value of adamw
+  lr: 0.0005
+
+  # learning rate
+  lr_type: poly
+  step_size: (160,240)
+
+
+DATA:
+  train:
+    name: &name shapenet
+
+    # octree building
+    depth: &depth 8
+    full_depth: &full_depth 3
+    points_scale: &points_scale 1.0  # the scale of point clouds
+
+    # sdf & color samples
+    volume_sample_num: &volume_sample_num 10000
+    surface_sample_num: &surface_sample_num 10000
+    max_points: 350000
+
+    # data augmentation
+    distort: False
+    rand_drop: False
+
+    # data loading
+    location: &location data/Objaverse/objaverse_5w
+    filelist: data/Objaverse/filelist/objaverse_5w_train.txt
+    load_pointcloud: True
+    load_sdf: True
+    sdf_file_num: &sdf_file_num 8
+    batch_size: 2
+    shuffle: True
+
+  test:
+    name: *name
+
+    # octree building
+    depth: *depth
+    full_depth: *full_depth
+    points_scale: *points_scale
+
+    # sdf & color samples
+    volume_sample_num: *volume_sample_num
+    surface_sample_num: *surface_sample_num
+
+    # data augmentation
+    distort: False
+
+    # data loading
+    location: *location
+    filelist: data/Objaverse/filelist/objaverse_5w_test.txt
+    batch_size: 1
+    load_pointcloud: True
+    load_sdf: True
+    sdf_file_num: *sdf_file_num
+    shuffle: False
+
+
+MODEL:
+  name: vae
+
+  in_channels: 4
+  embedding_sizes: 128
+  embedding_channels: 256
+  quantizer_type: plain
+  feature: ND
+
+
+LOSS:
+  name: shapenet_vae_loss
+  vae_weight: 1.0
