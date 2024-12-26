@@ -14,7 +14,11 @@ class ImageEncoder(nn.Module):
             if encoder_type == "resnet":
                 self.encoder = resnet_model.resnet18(pretrained=True).float()
             elif encoder_type == "vit":
-                self.encoder = timm.create_model("vit_base_patch16_224", pretrained=True)
+                self.encoder = timm.create_model(
+                    "vit_base_patch16_224", 
+                    # pretrained=True,
+                    checkpoint_path='/mnt/sdc/wangrh/workspace/pretrained-model/vit_base_patch16_224/pytorch_model.bin'
+                )
             elif encoder_type == "clip":
                 self.encoder = clip_model.CLIPEncoder()
             else:
@@ -63,4 +67,27 @@ class ImageEncoder(nn.Module):
             c_mm.append(c_image)
         return c_mm
             
-        
+
+class ConditionCrossAttn(nn.Module):
+    def __init__(self, 
+                 num_embed: int,
+                 num_heads: int,
+                 dropout: float,
+                 context_dim: int,
+                 **kwargs):
+        super().__init__()
+        self.cond_prelen = nn.LayerNorm(num_embed)
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=num_embed, 
+            num_heads=num_heads,
+            dropout=dropout,
+            kdim=context_dim,
+            vdim=context_dim,
+            batch_first=True
+        )
+        self.cond_postlen = nn.LayerNorm(num_embed)
+    
+    def forward(self, x, cond):
+        c_mm = self.encoder(image)
+        c_mm = [self.condition_mlp(c) for c in c_mm]
+        return c_mm

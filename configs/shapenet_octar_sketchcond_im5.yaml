@@ -2,7 +2,7 @@ SOLVER:
   gpu: 4,5,6,7,
   run: train
 
-  logdir: logs/shapenet_ar/airplane_sketch_vit_concat
+  logdir: logs/shapenet_ar/im5_sketch_cond2
   max_epoch: 200
   test_every_epoch: 1
   log_per_iter: 50
@@ -49,7 +49,7 @@ DATA:
 
     # data loading
     location: &location /mnt/sdc/weist/data/ShapeNet/dataset_new/
-    filelist: &filelist /mnt/sdc/weist/data/ShapeNet/filelist/train_airplane.txt
+    filelist: &filelist /mnt/sdc/weist/data/ShapeNet/filelist/train_im_5.txt
     load_image: &load_image True
     image_location: &image_location /mnt/sdc/weist/data/ShapeNet/sketch_256
 
@@ -75,7 +75,7 @@ DATA:
 
     # data loading
     location: *location
-    filelist: /mnt/sdc/weist/data/ShapeNet/filelist/test_airplane.txt
+    filelist: /mnt/sdc/weist/data/ShapeNet/filelist/test_im_5.txt
     load_image: *load_image
     image_location: *image_location
 
@@ -88,7 +88,7 @@ MODEL:
   depth: *depth
   full_depth: *full_depth
   depth_stop: 6
-  vqvae_ckpt: logs/shapenet_vqvae/vqvae_airplane_proj_k128g4c64_1119/best_model.pth
+  vqvae_ckpt: logs/shapenet_vqvae/vqvae_im5_vqvae_proj_k128g4c64_1120/best_model.pth
   find_unused_parameters: True
   model_name: MAREncoderDecoder
 
@@ -103,8 +103,7 @@ MODEL:
     feature: ND
   
   GPT:
-    context_dim: 768
-    num_embed: 768
+    num_embed: 192
     num_heads: 8
     num_blocks: 16
     num_classes: 1

@@ -26,7 +26,7 @@ class OctarCondSolver(Solver):
     self.enable_amp = FLAGS.SOLVER.enable_amp
     self.scaler = None
     if self.condition_type == "image":
-      self.img_enc = ImageEncoder("resnet")
+      self.img_enc = ImageEncoder("vit")
       self.img_enc.eval()
       utils.set_requires_grad(self.img_enc, False)
 
@@ -72,7 +72,7 @@ class OctarCondSolver(Solver):
             'grad', 'weight', 'occu', 'color']
     for key in keys:
       if key in batch:
-        batch[key] = batch[key].cuda()
+        batch[key] = batch[key].to(device=self.device)
       
     if self.condition_type == "None":
       batch['condition'] = None
@@ -83,7 +83,8 @@ class OctarCondSolver(Solver):
     elif self.condition_type == "image":
       images = batch['image'].to(device=self.device)
       cond = self.img_enc(images)
-      cond = torch.cat(cond, dim=1) # (B, 49, 512)
+      cond = torch.cat(cond, dim=1) # (B, 49, 512) for resnet
+                                    # (B, 196, 768) for vit
       batch['condition'] = cond
     else:
       raise NotImplementedError("Condition type not implemented")
@@ -156,7 +157,7 @@ class OctarCondSolver(Solver):
       train_tracker.update(output)
 
       # clear cache every 50 iterations
-      if it % 50 == 0 and self.FLAGS.SOLVER.empty_cache:
+      if it % 1 == 0 and self.FLAGS.SOLVER.empty_cache:
         torch.cuda.empty_cache()
 
       # output intermediate logs
@@ -315,7 +316,10 @@ class OctarCondSolver(Solver):
       if self.scheduler:
         self.scheduler.load_state_dict(trained_dict['scheduler_dict'])
       if self.scaler:
-        self.scaler.load_state_dict(trained_dict['scaler_dict'])
+        try:
+          self.scaler.load_state_dict(trained_dict['scaler_dict'])
+        except:
+          self.scaler = torch.GradScaler()
     else:
       model_dict = trained_dict
     model = self.model.module if self.world_size > 1 else self.model

@@ -8,6 +8,7 @@ import ocnn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from condition import ConditionCrossAttn
 from models.octformer import OctFormer, OctreeT
 from models.positional_embedding import SinPosEmb
 from models.vae import DiagonalGaussian
@@ -39,6 +40,7 @@ class MAR(nn.Module):
                remask_stage=0.9,
                vqvae_config=None,
                condition_type="None",
+               condition_policy="concat",
                num_iters=256,
                context_dim=512,
                **kwargs):
@@ -67,12 +69,15 @@ class MAR(nn.Module):
 
     self.split_emb = nn.Embedding(self.split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
+    
+    self.condition_policy = condition_policy
     if condition_type not in ['None', 'category']:
       self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
+      self.cond_preln = nn.LayerNorm(num_embed)
       self.cross_attn = nn.MultiheadAttention(
         embed_dim=num_embed, num_heads=num_heads, dropout=drop_rate, 
         kdim=context_dim, vdim=context_dim, batch_first=True)
-      self.cond_ln = nn.LayerNorm(num_embed)
+      self.cond_postln = nn.LayerNorm(num_embed)
     self.vq_proj = nn.Linear(self.num_vq_embed, num_embed)
 
     self._init_blocks()
@@ -429,17 +434,16 @@ class MAREncoderDecoder(MAR):
       x = torch.cat([buffer, x], dim=0)
       mask = torch.cat([mask_buffer, mask], dim=0)
     elif self.condition_type == 'image':
-      # TODO: Suport multiple batch size, currently only support batch size 1 for simplicity
-      x = x.unsqueeze(0)
-      attn_out, _ = self.cross_attn.forward(x, self.cond, self.cond)
-      x = x + attn_out
-      x = x.squeeze(0)
-      x = self.cond_ln(x)
-
+      buffer = self.cond.squeeze(0)
+      self.buffer_size = buffer.shape[0]
+      x = torch.cat([buffer, x], dim=0)
+      mask = torch.cat([torch.zeros(buffer.shape[0], device=x.device).bool(), mask], dim=0)
+    
     x_enc = x.clone()
     x_enc = x_enc[~mask]
     
     if len(x_enc):
+      # TODO: incorporate the condition into the encoder
       octreeT_encoder = OctreeT(
           octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
           depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
@@ -447,6 +451,24 @@ class MAREncoderDecoder(MAR):
       x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder)
       x_enc = self.encoder_ln(x_enc)
       x[~mask] = x_enc
+    
+    # avoid out of memory, not a good solution
+    # x_temp = x.clone()
+    # if x.shape[0] > 12000:
+    #   x = x[:12000]
+
+    # if self.condition_type == 'image':
+    #   # TODO: Suport multiple batch size, currently only support batch size 1 for simplicity
+    #   x = self.cond_preln(x)
+    #   x = x.unsqueeze(0)
+    #   attn_out, _ = self.cross_attn.forward(x, self.cond, self.cond)
+    #   x = x + attn_out
+    #   x = x.squeeze(0)
+    #   x = self.cond_postln(x)
+    
+    # # avoid out of memory, not a good solution
+    # x_temp[:12000] = x
+    # x = x_temp
     
     octreeT_decoder = OctreeT(
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
