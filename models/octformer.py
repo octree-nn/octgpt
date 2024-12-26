@@ -378,8 +378,7 @@ class OctFormerStage(torch.nn.Module):
     
     self.cond_interval = cond_interval  
 
-  def forward(self, data: torch.Tensor, octree: OctreeT, cond=None, cond_enc=None):
-    
+  def forward(self, data: torch.Tensor, octree: OctreeT, **kwargs):
     for i in range(self.num_blocks):
       if self.use_checkpoint and self.training:
         data = checkpoint(self.blocks[i], data, octree, use_reentrant=False)
@@ -387,8 +386,11 @@ class OctFormerStage(torch.nn.Module):
         data = self.blocks[i](data, octree)
       
       if i % self.cond_interval == 0:
-        if cond is not None and cond_enc is not None:
-          data = cond_enc(data, cond)
+        if 'cond' in kwargs and 'cond_enc' in kwargs:
+          cond = kwargs['cond']
+          cond_enc = kwargs['cond_enc']
+          if cond is not None and cond_enc is not None:
+            data = cond_enc(data, cond)
     return data
 
 
@@ -419,6 +421,6 @@ class OctFormer(torch.nn.Module):
         use_checkpoint=use_checkpoint, use_swin=use_swin,
         cond_interval=cond_interval)
 
-  def forward(self, data: torch.Tensor, octree: OctreeT):
-    data = self.layers(data, octree)
+  def forward(self, data: torch.Tensor, octree: OctreeT, **kwargs):
+    data = self.layers(data, octree, **kwargs)
     return data

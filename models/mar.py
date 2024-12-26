@@ -8,7 +8,7 @@ import ocnn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from condition import ConditionCrossAttn
+from models.condition import ConditionCrossAttn
 from models.octformer import OctFormer, OctreeT
 from models.positional_embedding import SinPosEmb
 from models.vae import DiagonalGaussian
@@ -40,7 +40,7 @@ class MAR(nn.Module):
                remask_stage=0.9,
                vqvae_config=None,
                condition_type="None",
-               condition_policy="concat",
+               condition_policy="cross_attn",
                num_iters=256,
                context_dim=512,
                **kwargs):
@@ -73,11 +73,8 @@ class MAR(nn.Module):
     self.condition_policy = condition_policy
     if condition_type not in ['None', 'category']:
       self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
-      self.cond_preln = nn.LayerNorm(num_embed)
-      self.cross_attn = nn.MultiheadAttention(
-        embed_dim=num_embed, num_heads=num_heads, dropout=drop_rate, 
-        kdim=context_dim, vdim=context_dim, batch_first=True)
-      self.cond_postln = nn.LayerNorm(num_embed)
+      self.cond_encoder = ConditionCrossAttn(
+        num_embed=num_embed, num_heads=num_heads, dropout=drop_rate, context_dim=context_dim)
     self.vq_proj = nn.Linear(self.num_vq_embed, num_embed)
 
     self._init_blocks()
@@ -100,7 +97,8 @@ class MAR(nn.Module):
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
         pos_emb=eval(self.pos_emb_type), nempty=False,
-        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
+        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin,
+        cond_interval=3)
     self.ln_x = nn.LayerNorm(self.num_embed)
 
   def _init_weights(self, module):
@@ -138,7 +136,10 @@ class MAR(nn.Module):
 
   def forward_blocks(self, x, octree: OctreeT, blocks):
     x = depth2batch(x, octree.indices)
-    x = blocks(x, octree)
+    if self.condition_policy == 'cross_attn':
+      x = blocks(x, octree, cond=self.cond, cond_enc=self.cond_encoder)
+    else:
+      x = blocks(x, octree)
     x = batch2depth(x, octree.indices)
     return x
 
@@ -411,7 +412,8 @@ class MAREncoderDecoder(MAR):
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
         pos_emb=eval(self.pos_emb_type), nempty=False,
-        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
+        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin,
+        cond_interval=3)
     self.encoder_ln = nn.LayerNorm(self.num_embed)
 
     self.decoder = OctFormer(
@@ -433,7 +435,7 @@ class MAREncoderDecoder(MAR):
       mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
       x = torch.cat([buffer, x], dim=0)
       mask = torch.cat([mask_buffer, mask], dim=0)
-    elif self.condition_type == 'image':
+    elif self.condition_type == 'image' and self.condition_policy == 'concat':
       buffer = self.cond.squeeze(0)
       self.buffer_size = buffer.shape[0]
       x = torch.cat([buffer, x], dim=0)
@@ -443,14 +445,13 @@ class MAREncoderDecoder(MAR):
     x_enc = x_enc[~mask]
     
     if len(x_enc):
-      # TODO: incorporate the condition into the encoder
       octreeT_encoder = OctreeT(
           octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
           depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
           data_mask=mask, buffer_size=self.buffer_size)
       x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder)
       x_enc = self.encoder_ln(x_enc)
-      x[~mask] = x_enc
+    x[~mask] = x_enc
     
     # avoid out of memory, not a good solution
     # x_temp = x.clone()

@@ -2,12 +2,12 @@ SOLVER:
   gpu: 4,5,6,7,
   run: train
 
-  logdir: logs/shapenet_ar/airplane_sketch_vit_concat
+  logdir: logs/shapenet_ar/airplane_sketch_vit_ca
   max_epoch: 200
   test_every_epoch: 1
   log_per_iter: 50
   ckpt_num: 10
-  port: 10005
+  port: 10009
 
   # optimizer
   type: adamw

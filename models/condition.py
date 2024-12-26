@@ -88,6 +88,11 @@ class ConditionCrossAttn(nn.Module):
         self.cond_postlen = nn.LayerNorm(num_embed)
     
     def forward(self, x, cond):
-        c_mm = self.encoder(image)
-        c_mm = [self.condition_mlp(c) for c in c_mm]
-        return c_mm
+        x = self.cond_prelen(x)
+        x = x.unsqueeze(0)
+        attn_out, _ = self.cross_attn(
+            query=x, key=cond, value=cond)
+        x = x + attn_out
+        x = x.squeeze(0)
+        x = self.cond_postlen(x)
+        return x
