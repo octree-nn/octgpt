@@ -34,6 +34,7 @@ class MAR(nn.Module):
                use_checkpoint=True,
                use_swin=True,
                num_vq_blocks=2,
+               random_flip=0.0,
                mask_ratio_min=0.7,
                start_temperature=1.0,
                remask_stage=0.9,
@@ -55,6 +56,7 @@ class MAR(nn.Module):
     self.use_swin = use_swin
     self.use_flex = False
     self.num_vq_blocks = num_vq_blocks
+    self.random_flip = random_flip
     self.start_temperature = start_temperature
     self.remask_stage = remask_stage
     self.num_iters = num_iters
@@ -160,14 +162,21 @@ class MAR(nn.Module):
     elif self.condition_type == "category":
       self.cond = self.class_emb(condition)
 
-    split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
     targets_split = split.clone().detach()
+    if self.random_flip > 0.0:
+      flip = torch.rand_like(split.float()) < self.random_flip
+      split = torch.where(flip, 1 - split, split)
+    split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
     nnum_split = split_token_embeddings.shape[0]
 
     with torch.no_grad():
       vq_code = vqvae.extract_code(octree_in)
       zq, indices, _ = vqvae.quantizer(vq_code)
       targets_vq = copy.deepcopy(indices)
+      if self.random_flip > 0.0:
+        flip = torch.rand_like(indices.float()) < self.random_flip
+        indices = torch.where(flip, 1 - indices, indices)
+        zq = vqvae.quantizer.extract_code(indices)
     vq_token_embeddings = self.vq_proj(zq)
     nnum_vq = vq_token_embeddings.shape[0]
 

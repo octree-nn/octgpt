@@ -104,6 +104,7 @@ MODEL:
     pos_emb_type: SinPosEmb
     use_checkpoint: True
     use_swin: True
+    random_flip: 0.0
     num_vq_blocks: 2
     mask_ratio_min: 0.7
     remask_stage: 0.7
