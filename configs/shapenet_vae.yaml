@@ -57,6 +57,7 @@ DATA:
     # sdf & color samples
     volume_sample_num: *volume_sample_num
     surface_sample_num: *surface_sample_num
+    max_points: 350000
 
     # data augmentation
     distort: False
@@ -76,10 +77,10 @@ MODEL:
 
   in_channels: 4
   embedding_sizes: 128
-  embedding_channels: 256
-  quantizer_type: plain
+  embedding_channels: 64
+  quantizer_type: bsq
   feature: ND
-  rnd_flip: 0.2
+  rnd_flip: 0.0
 
 
 LOSS:
