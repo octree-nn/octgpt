@@ -79,6 +79,7 @@ MODEL:
   embedding_channels: 256
   quantizer_type: plain
   feature: ND
+  rnd_flip: 0.2
 
 
 LOSS:

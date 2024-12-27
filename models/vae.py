@@ -353,7 +353,8 @@ class BinarySphericalQuantizer(torch.nn.Module):
     assert z.shape[-1] == self.embed_dim
     zhat = (z > 0) * 2 - 1
     if self.training and self.rnd_flip > 0:
-      flip = (torch.rand_like(z) > self.rnd_flip) * 2 - 1
+      ratio = torch.rand(1).item() * self.rnd_flip
+      flip = (torch.rand_like(z) > ratio) * 2 - 1
       zhat = zhat * flip
     return z + (zhat - z).detach()
 
@@ -414,6 +415,7 @@ class VQVAE(torch.nn.Module):
                n_node_type: int = 7,
                quantizer_type: str = 'plain',
                quantizer_group: int = 4,
+               rnd_flip: float = 0.0,
                **kwargs):
     super().__init__()
     self.feature = feature
@@ -426,7 +428,8 @@ class VQVAE(torch.nn.Module):
         self.dec_dec_channels, self.dec_dec_resblk_nums, self.mpu_stage_nums,
         self.pred_stage_nums, self.bottleneck)
     self.quantizer = self.get_quantizer(
-        quantizer_type, embedding_sizes, embedding_channels, quantizer_group)
+        quantizer_type, embedding_sizes, embedding_channels,
+        quantizer_group, rnd_flip)
 
     self.pre_proj = torch.nn.Linear(
         self.enc_channels[-1], embedding_channels, bias=True)
@@ -447,8 +450,10 @@ class VQVAE(torch.nn.Module):
     self.dec_dec_resblk_nums = [2, 4, 2, 2, 1, 1]
 
   def get_quantizer(self, quantizer_type: str, embedding_sizes: int,
-                    embedding_channels: int, group: int = 4):
-    kwargs = {'K': embedding_sizes, 'D': embedding_channels, 'G': group}
+                    embedding_channels: int, group: int = 4,
+                    rnd_flip: float = 0.0):
+    kwargs = {'K': embedding_sizes, 'D': embedding_channels,
+              'G': group, 'rnd_flip': rnd_flip}
 
     if 'plain' in quantizer_type:
       Quantizer = VectorQuantizer
