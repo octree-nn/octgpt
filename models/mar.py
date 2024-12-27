@@ -40,7 +40,7 @@ class MAR(nn.Module):
                remask_stage=0.9,
                vqvae_config=None,
                condition_type="None",
-               condition_policy="cross_attn",
+               condition_policy="concat",
                num_iters=256,
                context_dim=512,
                **kwargs):
@@ -73,8 +73,21 @@ class MAR(nn.Module):
     self.condition_policy = condition_policy
     if condition_type not in ['None', 'category']:
       self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
-      self.cond_encoder = ConditionCrossAttn(
-        num_embed=num_embed, num_heads=num_heads, dropout=drop_rate, context_dim=context_dim)
+      if condition_policy == 'cross_attn':
+        self.cond_encoder = ConditionCrossAttn(
+          num_embed=num_embed, num_heads=num_heads, dropout=drop_rate, context_dim=context_dim)
+      else: # Useless, just for reading existing checkpoint that are saved before cleaning the code
+        self.cond_preln = nn.LayerNorm(num_embed)
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=num_embed, 
+            num_heads=num_heads,
+            dropout=drop_rate,
+            kdim=context_dim,
+            vdim=context_dim,
+            batch_first=True
+        )
+        self.cond_postln = nn.LayerNorm(num_embed)
+        
     self.vq_proj = nn.Linear(self.num_vq_embed, num_embed)
 
     self._init_blocks()
@@ -134,9 +147,9 @@ class MAR(nn.Module):
     x = torch.where(mask.bool().unsqueeze(1), mask_tokens, x)
     return x
 
-  def forward_blocks(self, x, octree: OctreeT, blocks):
+  def forward_blocks(self, x, octree: OctreeT, blocks, use_cond=False):
     x = depth2batch(x, octree.indices)
-    if self.condition_policy == 'cross_attn':
+    if self.condition_policy == 'cross_attn' and use_cond:
       x = blocks(x, octree, cond=self.cond, cond_enc=self.cond_encoder)
     else:
       x = blocks(x, octree)
@@ -449,7 +462,7 @@ class MAREncoderDecoder(MAR):
           octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
           depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
           data_mask=mask, buffer_size=self.buffer_size)
-      x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder)
+      x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, True)
       x_enc = self.encoder_ln(x_enc)
     x[~mask] = x_enc
     
