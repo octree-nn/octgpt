@@ -63,7 +63,7 @@ class MAR(nn.Module):
     self.condition_type = condition_type
     self.split_size = 2  # 0/1 indicates the split signals
     self.num_vq_embed = vqvae_config.embedding_channels
-    
+
     if vqvae_config.quantizer_type == "group-project":
       self.vq_size = vqvae_config.embedding_sizes
       self.vq_groups = vqvae_config.quantizer_group
@@ -72,7 +72,7 @@ class MAR(nn.Module):
       self.vq_groups = vqvae_config.embedding_channels
     else:
       raise ValueError("Unsupported quantizer type")
-    
+
     self.split_emb = nn.Embedding(self.split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
     # self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
@@ -199,7 +199,7 @@ class MAR(nn.Module):
     mask_split = mask[:nnum_split]
     split_logits = self.split_head(x[:nnum_split])
     output['split_loss'] = F.cross_entropy(
-        split_logits[mask_split], targets_split[mask_split])
+        split_logits, targets_split)
     with torch.no_grad():
       correct_top1 = self.get_correct_topk(
           split_logits[mask_split], targets_split[mask_split], topk=1)
@@ -209,13 +209,14 @@ class MAR(nn.Module):
     # VQ accuracy
     mask_vq = mask[-nnum_vq:]
     vq_logits = self.vq_head(x[-nnum_vq:])
-    vq_logits = vq_logits[mask_vq].reshape(-1, self.vq_size)
-    targets_vq = targets_vq[mask_vq].reshape(-1)
     output['vq_loss'] = F.cross_entropy(
-        vq_logits, targets_vq)
+        vq_logits.reshape(-1, self.vq_size), targets_vq.reshape(-1))
     # Top-k Accuracy
     with torch.no_grad():
-      correct_top5 = self.get_correct_topk(vq_logits, targets_vq, topk=5)
+      correct_top5 = self.get_correct_topk(
+          vq_logits[mask_vq].reshape(-1, self.vq_size), 
+          targets_vq[mask_vq].reshape(-1), 
+          topk=5)
       output['top5_accuracy'] = correct_top5.sum().float() / \
           (mask_vq.sum().float() * self.vq_groups)
     return output
