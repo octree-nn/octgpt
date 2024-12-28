@@ -198,8 +198,13 @@ class MAR(nn.Module):
     # split accuracy
     mask_split = mask[:nnum_split]
     split_logits = self.split_head(x[:nnum_split])
-    output['split_loss'] = F.cross_entropy(
-        split_logits, targets_split)
+    if self.random_flip > 0.0:
+      output['split_loss'] = F.cross_entropy(
+          split_logits, targets_split)
+    else:
+      output['split_loss'] = F.cross_entropy(
+          split_logits[mask_split], targets_split[mask_split])
+    
     with torch.no_grad():
       correct_top1 = self.get_correct_topk(
           split_logits[mask_split], targets_split[mask_split], topk=1)
@@ -209,8 +214,12 @@ class MAR(nn.Module):
     # VQ accuracy
     mask_vq = mask[-nnum_vq:]
     vq_logits = self.vq_head(x[-nnum_vq:])
-    output['vq_loss'] = F.cross_entropy(
-        vq_logits.reshape(-1, self.vq_size), targets_vq.reshape(-1))
+    if self.random_flip > 0.0:
+      output['vq_loss'] = F.cross_entropy(
+          vq_logits.reshape(-1, self.vq_size), targets_vq.reshape(-1))
+    else:
+      output['vq_loss'] = F.cross_entropy(
+          vq_logits[mask_vq].reshape(-1, self.vq_size), targets_vq[mask_vq].reshape(-1))
     # Top-k Accuracy
     with torch.no_grad():
       correct_top5 = self.get_correct_topk(
