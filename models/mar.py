@@ -163,9 +163,9 @@ class MAR(nn.Module):
       self.cond = self.class_emb(condition)
 
     targets_split = split.clone().detach()
-    if self.random_flip > 0.0:
-      flip = torch.rand_like(split.float()) < self.random_flip
-      split = torch.where(flip, 1 - split, split)
+    # if self.random_flip > 0.0:
+    #   flip = torch.rand_like(split.float()) < self.random_flip
+    #   split = torch.where(flip, 1 - split, split)
     split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
     nnum_split = split_token_embeddings.shape[0]
 
