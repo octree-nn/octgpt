@@ -1,5 +1,5 @@
 import numpy as np
-from utils.render.render_utils import Render, create_pose
+from metrics.render.render_utils import Render, create_pose
 import matplotlib
 import os
 os.environ['PYOPENGL_PLATFORM'] = 'egl'

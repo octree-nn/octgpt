@@ -28,7 +28,7 @@ snc_category_to_synth_id_13 = {
 }
 
 cond = True
-root_dir = "/data0/weist/code/Autoregressive/OctAR-solver/logs/chair/mar_bv24_ec_b20"
+root_dir = "logs/chair/mar_bv24_ec_flip2_mask0.3"
 fid_dir = f'{root_dir}/fid_images'
 mesh_dir = f'{root_dir}/results'
 

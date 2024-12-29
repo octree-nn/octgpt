@@ -1,8 +1,25 @@
 from .render.render import render_mesh
+import trimesh
+import numpy as np
 import torch
 import torchvision
-from .util import ensure_directory, scale_to_unit_sphere
 import os
+
+def ensure_directory(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+
+
+def scale_to_unit_sphere(mesh, evaluate_metric = False):
+    if isinstance(mesh, trimesh.Scene):
+        mesh = mesh.dump().sum()
+
+    vertices = mesh.vertices - mesh.bounding_box.centroid
+    distances = np.linalg.norm(vertices, axis=1)
+    vertices /= np.max(distances)
+    if evaluate_metric:
+        vertices /= 2
+    return trimesh.Trimesh(vertices=vertices, faces=mesh.faces)
 
 def render_one_mesh(mesh, i, j, mydir, render_resolution=1024):
     mesh = scale_to_unit_sphere(mesh)

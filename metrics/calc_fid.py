@@ -16,7 +16,7 @@ category = 'chair'
 cond = True
 synth_id = category_to_snc_synth_id[category]
 
-root_dir = "/data0/weist/code/Autoregressive/OctAR-solver/logs/chair/mar_bv24_ec_b20"
+root_dir = "logs/chair/mar_bv32_ec_flip2_mask0.5"
 synthesis_path = f'{root_dir}/fid_images'
 
 dataset_path = f'data/ShapeNet/fid_images/{category}'
