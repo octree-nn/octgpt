@@ -143,7 +143,9 @@ class MAR(nn.Module):
       batch_id = get_batch_id(octree, depth_list)
       mask_tokens = self.cond[batch_id]
     elif self.condition_type == 'image':
-      mask_tokens = self.mask_token.repeat(x.shape[0], 1)
+      # mask_tokens = self.mask_token.repeat(x.shape[0], 1)
+      mask_tokens = self.cond[..., -1, :].reshape(-1, self.num_embed)
+      mask_tokens = mask_tokens.repeat(x.shape[0], 1)
     x = torch.where(mask.bool().unsqueeze(1), mask_tokens, x)
     return x
 
@@ -465,24 +467,6 @@ class MAREncoderDecoder(MAR):
       x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, True)
       x_enc = self.encoder_ln(x_enc)
     x[~mask] = x_enc
-    
-    # avoid out of memory, not a good solution
-    # x_temp = x.clone()
-    # if x.shape[0] > 12000:
-    #   x = x[:12000]
-
-    # if self.condition_type == 'image':
-    #   # TODO: Suport multiple batch size, currently only support batch size 1 for simplicity
-    #   x = self.cond_preln(x)
-    #   x = x.unsqueeze(0)
-    #   attn_out, _ = self.cross_attn.forward(x, self.cond, self.cond)
-    #   x = x + attn_out
-    #   x = x.squeeze(0)
-    #   x = self.cond_postln(x)
-    
-    # # avoid out of memory, not a good solution
-    # x_temp[:12000] = x
-    # x = x_temp
     
     octreeT_decoder = OctreeT(
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
