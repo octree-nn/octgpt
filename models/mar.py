@@ -144,7 +144,7 @@ class MAR(nn.Module):
       mask_tokens = self.cond[batch_id]
     elif self.condition_type == 'image':
       # mask_tokens = self.mask_token.repeat(x.shape[0], 1)
-      mask_tokens = self.cond[..., -1, :].reshape(-1, self.num_embed)
+      mask_tokens = self.cond.reshape(-1, self.num_embed).mean(dim=0, keepdim=True)
       mask_tokens = mask_tokens.repeat(x.shape[0], 1)
     x = torch.where(mask.bool().unsqueeze(1), mask_tokens, x)
     return x

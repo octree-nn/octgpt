@@ -138,10 +138,12 @@ class TransformShape:
       output.update(samples)
     
     ## Sketch Condition
-    if self.flags.get('load_image'):
+    if self.flags.get('load_sketch'):
       output['image'] = sample['image'].unsqueeze(0)
       output['projection_matrix'] = sample['projection_matrix'].unsqueeze(0)
 
+    if self.flags.get('load_image'):
+      output['image'] = sample['image'].unsqueeze(0)  
     
     return output
 
@@ -173,7 +175,7 @@ class ReadFile:
       output['sdf'] = sdf
     
     # Load the sketch image
-    if self.flags.get('load_image'):
+    if self.flags.get('load_sketch'):
       if uid is None:
         raise ValueError('uid should be provided when loading image')
       read_image = ReadSketch(self.flags)
@@ -182,8 +184,47 @@ class ReadFile:
       output['image'] = img
       output['projection_matrix'] = pm
       output['sketch_view'] = sketch_view
+    
+    if self.flags.get('load_image'):
+      if uid is None:
+        raise ValueError('uid should be provided when loading image')
+      read_image = ReadRenderedImage(self.flags)
+      img = read_image(uid)
+      output['uid'] = uid
+      output['image'] = img
 
     return output
+
+
+class ReadRenderedImage:
+  def __init__(self, flags):
+    self.flags = flags
+    self.image_folder = flags.image_location
+    self.to_tensor = transforms.ToTensor()
+    self.normalize = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    self.resize = transforms.Resize((256, 256), antialias=False)
+  
+  def process_image(self, img):
+    img_t = self.to_tensor(img)
+    assert img_t.shape[0] == 4
+    _, oh, ow = img_t.shape
+    ls = max(oh, ow)
+    pad_h1, pad_h2 = (ls - oh) // 2, (ls - oh) - (ls - oh) // 2
+    pad_w1, pad_w2 = (ls - ow) // 2, (ls - ow) - (ls - ow) // 2
+    
+    img_t = F.pad(img_t[None, ...], (pad_w1, pad_w2, pad_h1, pad_h2), mode='constant', value=0)[0]
+    
+    img_t[:3] = self.normalize(img_t[:3])
+    img_t = self.resize(img_t)
+    return img_t
+  
+  def load_image(self, uid):
+    uid = uid.split('/')[-1]
+    img = Image.open(os.path.join(self.image_folder, f'{uid}_0.png')).convert('RGBA')
+    return self.process_image(img)
+  
+  def __call__(self, uid):
+    return self.load_image(uid)
 
 
 SKETCH_PER_VIEW = 10

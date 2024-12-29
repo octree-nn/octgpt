@@ -2,7 +2,7 @@ SOLVER:
   gpu: 4,5,6,7,
   run: train
 
-  logdir: logs/shapenet_ar/airplane_sketch_vit_concat
+  logdir: logs/shapenet_ar/airplane_image_vit_concat_repeat_feat
   max_epoch: 200
   test_every_epoch: 1
   log_per_iter: 50
@@ -50,8 +50,10 @@ DATA:
     # data loading
     location: &location /mnt/sdc/weist/data/ShapeNet/dataset_new/
     filelist: &filelist /mnt/sdc/weist/data/ShapeNet/filelist/train_airplane.txt
+    load_sketch: &load_sketch False
     load_image: &load_image True
-    image_location: &image_location /mnt/sdc/weist/data/ShapeNet/sketch_256
+    # image_location: &image_location /mnt/sdc/weist/data/ShapeNet/sketch_256
+    image_location: &image_location /mnt/sdb/xiongbj/DualOctreeGNN-Pytorch/data/ShapeNet/fid_images/airplane/view_0/
 
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
@@ -76,6 +78,7 @@ DATA:
     # data loading
     location: *location
     filelist: /mnt/sdc/weist/data/ShapeNet/filelist/test_airplane.txt
+    load_sketch: *load_sketch
     load_image: *load_image
     image_location: *image_location
 
