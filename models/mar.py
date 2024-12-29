@@ -198,12 +198,8 @@ class MAR(nn.Module):
     # split accuracy
     mask_split = mask[:nnum_split]
     split_logits = self.split_head(x[:nnum_split])
-    if self.random_flip > 0.0:
-      output['split_loss'] = F.cross_entropy(
-          split_logits, targets_split)
-    else:
-      output['split_loss'] = F.cross_entropy(
-          split_logits[mask_split], targets_split[mask_split])
+    output['split_loss'] = F.cross_entropy(
+        split_logits[mask_split], targets_split[mask_split])
     
     with torch.no_grad():
       correct_top1 = self.get_correct_topk(
