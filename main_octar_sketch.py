@@ -180,6 +180,8 @@ class OctarCondSolver(Solver):
         self.generate_step(epoch + get_rank())
       except:
         pass
+  
+  
 
   def generate(self):
     self.manual_seed()
@@ -234,6 +236,19 @@ class OctarCondSolver(Solver):
       image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
       cv2.imwrite(os.path.join(self.logdir, f"results/{index}.png"), image)
 
+  @torch.no_grad()
+  def eval_step(self, batch):
+    index = batch['filename'][0].split('/')[-1]
+    self.batch_to_cuda(batch)
+    octree_out = ocnn.octree.init_octree(
+        self.depth, self.full_depth, self.FLAGS.DATA.test.batch_size, self.device)
+    with torch.autocast("cuda", enabled=self.enable_amp):
+      octree_out, vq_code = self.model_module.generate(
+          octree=octree_out,
+          depth_low=self.full_depth, depth_high=self.depth_stop,
+          vqvae=self.vqvae_module, condition=batch['condition'])
+    self.export_results(octree_out, index, vq_code, batch['image'].cpu().numpy())
+  
   @torch.no_grad()
   def generate_step(self, index):
     # forward the model
