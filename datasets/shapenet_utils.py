@@ -95,3 +95,11 @@ snc_category_to_synth_id_all = {
     'sofa': '04256520',      'stove': '04330267',      'vessel': '04530566',
     'washer': '04554684',    'boat': '02858304',       'cellphone': '02992529'
 }
+category_5_to_num = {
+    'airplane' : 2831, 
+    'car': 5247, 
+    'chair': 4744, 
+    'table': 5956, 
+    'rifle': 1660, 
+    'im_5': 10000
+}

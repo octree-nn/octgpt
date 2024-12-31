@@ -9,7 +9,7 @@ from utils import utils, builder
 from utils.distributed import get_rank
 from models.mar import MAR, MARUNet, MAREncoderDecoder
 from datasets import get_shapenet_dataset
-from datasets.shapenet_utils import snc_synth_id_to_label_5
+from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num
 from tqdm import tqdm
 import copy
 
@@ -108,16 +108,18 @@ class OctarSolver(Solver):
     self.config_dataloader(disable_train_data=True)
     self.load_checkpoint()
     self.model.eval()
+    category = self.FLAGS.DATA.test.filelist.split("_")[-1][:-4]
+    num_meshes = category_5_to_num[category] if category in category_5_to_num else 10000
+    mesh_indices = []
+    for i in range(num_meshes):
+      mesh_path = os.path.join(self.logdir, f"results/{i}.obj")
+      if not os.path.exists(mesh_path):
+        mesh_indices.append(i)
+    
     for iter in tqdm(range(0, 10000), ncols=80):
-      index = self.world_size * iter + get_rank()
-      mesh_path = os.path.join(self.logdir, f"results/{index}.obj")
-      if os.path.exists(mesh_path):
-        print(mesh_path, "exists, skip")
-        continue
+      index = mesh_indices[self.world_size * iter + get_rank()]
       self.generate_step(index)
       # self.generate_vq_step(index)
-      if index > 2831:
-        break
 
   def export_results(self, octree_out, index, vq_code=None):
     # export the octree
