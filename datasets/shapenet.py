@@ -264,7 +264,7 @@ class ReadSketch:
       img = Image.open(self.flags.input_image).convert('RGBA')
       sketch_view_index = int(self.flags.input_image.split("_")[-2])
     else:
-      sketch_view_index = np.random.randint(0, 5 * SKETCH_PER_VIEW)
+      sketch_view_index = 18 # np.random.randint(0, 5 * SKETCH_PER_VIEW)
       img = Image.open(os.path.join(
         self.feature_folder, 
         uid, 
