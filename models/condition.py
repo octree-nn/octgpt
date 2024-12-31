@@ -76,6 +76,8 @@ class ConditionCrossAttn(nn.Module):
                  context_dim: int,
                  **kwargs):
         super().__init__()
+        self.cond_ln = nn.LayerNorm(context_dim)
+        
         self.cond_prelen = nn.LayerNorm(num_embed)
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=num_embed, 
@@ -88,6 +90,7 @@ class ConditionCrossAttn(nn.Module):
         self.cond_postlen = nn.LayerNorm(num_embed)
     
     def forward(self, x, cond):
+        cond = self.cond_ln(cond)
         x = self.cond_prelen(x)
         x = x.unsqueeze(0)
         attn_out, _ = self.cross_attn(

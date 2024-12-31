@@ -77,6 +77,7 @@ class MAR(nn.Module):
         self.cond_encoder = ConditionCrossAttn(
           num_embed=num_embed, num_heads=num_heads, dropout=drop_rate, context_dim=context_dim)
       else: # Useless, just for reading existing checkpoint that are saved before cleaning the code
+        self.cond_ln = nn.LayerNorm(context_dim)
         self.cond_preln = nn.LayerNorm(num_embed)
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=num_embed, 
@@ -138,30 +139,30 @@ class MAR(nn.Module):
     mask[orders[:mask_len]] = 1
     return mask
 
-  def random_masking(self, x, mask, octree, depth_list):
+  def random_masking(self, x, mask, octree, depth_list, cond=None):
     if self.condition_type in ['None', 'category']:
       batch_id = get_batch_id(octree, depth_list)
-      mask_tokens = self.cond[batch_id]
+      mask_tokens = cond[batch_id]
     elif self.condition_type == 'image':
-      # mask_tokens = self.mask_token.repeat(x.shape[0], 1)
-      mask_tokens = self.cond.reshape(-1, self.num_embed).mean(dim=0, keepdim=True)
-      mask_tokens = mask_tokens.repeat(x.shape[0], 1)
+      mask_tokens = self.mask_token.repeat(x.shape[0], 1)
+      # mask_tokens = cond.reshape(-1, self.num_embed).mean(dim=0, keepdim=True)
+      # mask_tokens = mask_tokens.repeat(x.shape[0], 1)
     x = torch.where(mask.bool().unsqueeze(1), mask_tokens, x)
     return x
 
-  def forward_blocks(self, x, octree: OctreeT, blocks, use_cond=False):
+  def forward_blocks(self, x, octree: OctreeT, blocks, use_cond=False, cond=None):
     x = depth2batch(x, octree.indices)
     if self.condition_policy == 'cross_attn' and use_cond:
-      x = blocks(x, octree, cond=self.cond, cond_enc=self.cond_encoder)
+      x = blocks(x, octree, cond=cond, cond_enc=self.cond_encoder)
     else:
       x = blocks(x, octree)
     x = batch2depth(x, octree.indices)
     return x
 
-  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
+  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split,cond=None):
     depth_list = list(range(depth_low, depth_high + 1))
 
-    buffer = self.cond.reshape(octree.batch_size, 1, -1)
+    buffer = cond.reshape(octree.batch_size, 1, -1)
     buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
     mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
     x = torch.cat([buffer, x], dim=0)
@@ -170,7 +171,7 @@ class MAR(nn.Module):
     octreeT = OctreeT(
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
         depth_list=depth_list, use_swin=self.use_swin, buffer_size=self.buffer_size)
-    x = self.forward_blocks(x, octreeT, self.blocks)
+    x = self.forward_blocks(x, octreeT, self.blocks,cond=cond)
     x = self.ln_x(x)
     return x
 
@@ -179,11 +180,11 @@ class MAR(nn.Module):
 
     if self.condition_type == "None":
       condition = torch.zeros(batch_size).long().to(octree_in.device)
-      self.cond = self.class_emb(condition)  # 1 x C
+      cond = self.class_emb(condition)  # 1 x C
     elif self.condition_type == "category":
-      self.cond = self.class_emb(condition)
+      cond = self.class_emb(condition)
     elif self.condition_type == 'image':
-      self.cond = condition
+      cond = condition
 
     split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
     targets_split = split.clone().detach()
@@ -204,11 +205,11 @@ class MAR(nn.Module):
     orders = torch.randperm(seq_len, device=x_token_embeddings.device)
     mask = self.get_mask(seq_len, orders).bool()
     x_token_embeddings = self.random_masking(
-        x_token_embeddings, mask, octree_in, list(range(depth_low, depth_high + 1)))
+        x_token_embeddings, mask, octree_in, list(range(depth_low, depth_high + 1)), cond=cond)
 
     # forward model
     x = self.forward_model(
-        x_token_embeddings, octree_in, depth_low, depth_high, mask, nnum_split)
+        x_token_embeddings, octree_in, depth_low, depth_high, mask, nnum_split, cond=cond)
 
     output = {}
     # split accuracy
@@ -255,11 +256,11 @@ class MAR(nn.Module):
     batch_size = octree.batch_size
     if self.condition_type == "None":
       condition = torch.zeros(batch_size).long().to(octree.device)
-      self.cond = self.class_emb(condition)  # 1 x C
+      cond = self.class_emb(condition)  # 1 x C
     elif self.condition_type == "category":
-      self.cond = self.class_emb(condition)
+      cond = self.class_emb(condition)
     elif self.condition_type == 'image':
-      self.cond = condition
+      cond = condition
 
     if token_embeddings is None:
       token_embeddings = torch.empty((0, self.num_embed), device=octree.device)
@@ -281,7 +282,7 @@ class MAR(nn.Module):
       token_embedding_d = torch.zeros(
           nnum_d, self.num_embed, device=octree.device)
       token_embedding_d = self.random_masking(
-          token_embedding_d, mask_d, octree, [d])
+          token_embedding_d, mask_d, octree, [d], cond=cond)
       orders = torch.randperm(nnum_d, device=octree.device)
 
       # set generate parameters
@@ -293,7 +294,7 @@ class MAR(nn.Module):
       for i in tqdm(range(num_iters)):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
         x = self.forward_model(x, octree, depth_low, d, nnum_split=nnum_split,
-                               mask=torch.cat([mask, mask_d]))
+                               mask=torch.cat([mask, mask_d]), cond=cond)
         x = x[-nnum_d:, :]
 
         # mask ratio for the next round, following MaskGIT and MAGE.
@@ -383,7 +384,7 @@ class MARUNet(MAR):
     self.upsample = ocnn.modules.OctreeDeconvGnRelu(
         self.num_embed, self.num_embed, group=32, kernel_size=[2], stride=2)
 
-  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
+  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split,cond=None):
     # if only split signals, not use vq sample
     apply_vq_sample = nnum_split < x.shape[0]
     if apply_vq_sample:
@@ -395,7 +396,7 @@ class MARUNet(MAR):
     octreeT_vq = OctreeT(
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
         depth_list=depth_list_vq, use_swin=self.use_swin, use_flex=self.use_flex)
-    x = self.forward_blocks(x, octreeT_vq, self.vq_encoder)
+    x = self.forward_blocks(x, octreeT_vq, self.vq_encoder,cond=cond)
     if apply_vq_sample:
       x_split = x[:nnum_split]
       x_vq = x[nnum_split:]
@@ -406,7 +407,7 @@ class MARUNet(MAR):
         octree, x.shape[0], self.patch_size, self.dilation,
         nempty=False, depth_list=depth_list_main, use_swin=self.use_swin)
     x = self.forward_blocks(
-        x, octreeT, self.blocks)
+        x, octreeT, self.blocks,cond=cond)
 
     if apply_vq_sample:
       # skip connection
@@ -414,7 +415,7 @@ class MARUNet(MAR):
       x_vq = x[nnum_split:] + x_vq
       x_vq = self.upsample(x_vq, octree, depth_high - 1)
       x = torch.cat([x_split, x_vq], dim=0)
-    x = self.forward_blocks(x, octreeT_vq, self.vq_decoder)
+    x = self.forward_blocks(x, octreeT_vq, self.vq_decoder,cond=cond)
 
     x = self.ln_x(x)
     return x
@@ -439,19 +440,21 @@ class MAREncoderDecoder(MAR):
         use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
     self.decoder_ln = nn.LayerNorm(self.num_embed)
 
-  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
+  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split,cond=None):
     batch_size = octree.batch_size
     depth_list = list(range(depth_low, depth_high + 1))
 
     # Add condition to the input
     if self.condition_type in ['None', 'category']:
-      buffer = self.cond.reshape(octree.batch_size, 1, -1)
+      buffer = cond.reshape(octree.batch_size, 1, -1)
       buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
       mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
       x = torch.cat([buffer, x], dim=0)
       mask = torch.cat([mask_buffer, mask], dim=0)
     elif self.condition_type == 'image' and self.condition_policy == 'concat':
-      buffer = self.cond.squeeze(0)
+      buffer = cond.squeeze(0)
+      buffer = buffer.repeat(3, 1)
+      buffer = self.cond_ln(buffer)
       self.buffer_size = buffer.shape[0]
       x = torch.cat([buffer, x], dim=0)
       mask = torch.cat([torch.zeros(buffer.shape[0], device=x.device).bool(), mask], dim=0)
@@ -464,7 +467,7 @@ class MAREncoderDecoder(MAR):
           octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
           depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
           data_mask=mask, buffer_size=self.buffer_size)
-      x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, True)
+      x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, True, cond=cond)
       x_enc = self.encoder_ln(x_enc)
     x[~mask] = x_enc
     
@@ -472,7 +475,7 @@ class MAREncoderDecoder(MAR):
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
         depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
         buffer_size=self.buffer_size)
-    x = self.forward_blocks(x, octreeT_decoder, self.decoder)
+    x = self.forward_blocks(x, octreeT_decoder, self.decoder, cond=cond)
     x = self.decoder_ln(x)
     x = x[batch_size * self.buffer_size:]
 
