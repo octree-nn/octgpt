@@ -3,7 +3,7 @@ SOLVER:
   run: train
 
   logdir: logs/shapenet_vae/vae
-  max_epoch: 200
+  max_epoch: 400
   test_every_epoch: 1
   log_per_iter: 50
   ckpt_num: 10
@@ -79,15 +79,14 @@ MODEL:
   depth_stop: 6
   vqvae_ckpt: saved_ckpt/vqvae_model.pth
   find_unused_parameters: True
-  model_name: MAR
+  model_name: MAREncoderDecoder
 
   VQVAE:
     name: vqvae
-
     in_channels: 4
     embedding_sizes: 128
-    embedding_channels: 256
-    quantizer_type: group-project
+    embedding_channels: 32
+    quantizer_type: bsq
     quantizer_group: 4
     feature: ND
   
@@ -104,11 +103,11 @@ MODEL:
     pos_emb_type: SinPosEmb
     use_checkpoint: True
     use_swin: True
-    random_flip: 0.0
+    random_flip: 0.1
     num_vq_blocks: 2
-    mask_ratio_min: 0.7
+    mask_ratio_min: 0.5
     remask_stage: 0.7
-    start_temperature: [1.4, 1.5, 0.5, 0.5]
+    start_temperature: [1.0, 1.2, 0.5, 0.5]
     num_iters: [64, 128, 128, 256]
     condition_type: None
   

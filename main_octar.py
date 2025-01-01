@@ -117,6 +117,8 @@ class OctarSolver(Solver):
         mesh_indices.append(i)
     
     for iter in tqdm(range(0, 10000), ncols=80):
+      if self.world_size * iter + get_rank() >= len(mesh_indices):
+        break
       index = mesh_indices[self.world_size * iter + get_rank()]
       self.generate_step(index)
       # self.generate_vq_step(index)

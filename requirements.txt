@@ -14,3 +14,7 @@ wget
 mesh2sdf
 matplotlib
 easydict
+pyglet
+pyrender
+pyrr
+cleanfid
