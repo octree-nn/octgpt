@@ -180,13 +180,13 @@ class OctarSolver(Solver):
           token_embeddings=self.model_module.split_emb(split_seq),
           vqvae=self.vqvae_module, condition=batch['condition'])
 
-    # vq_indices = self.vqvae_module.quantizer(vq_code)[1]
-    # gt_vq_code = self.vqvae_module.extract_code(octree_in)
-    # gt_indices = self.vqvae_module.quantizer(gt_vq_code)[1]
+    vq_indices = self.vqvae_module.quantizer(vq_code)[1]
+    gt_vq_code = self.vqvae_module.extract_code(octree_in)
+    gt_indices = self.vqvae_module.quantizer(gt_vq_code)[1]
 
-    # print(
-    #     f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.numel()} indices are different")
-    # self.export_results(octree_in, index + 1, gt_vq_code)
+    print(
+        f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.numel()} indices are different")
+    self.export_results(octree_in, index + 1, gt_vq_code)
     self.export_results(octree_out, index, vq_code)
 
 

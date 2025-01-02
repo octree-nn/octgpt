@@ -233,12 +233,21 @@ class MAR(nn.Module):
     return correct_topk
 
   def get_remask(self, logits, tokens, mask, remask_prob=0.2, topk=1):
-    remask = torch.rand_like(mask.float()) < remask_prob
     correct_topk = self.get_correct_topk(logits, tokens, topk=topk)
-    correct_topk = correct_topk.any(dim=-1)
-    if len(correct_topk.shape) > 1:
-      correct_topk = correct_topk.all(dim=-1)
-    remask = remask & ~correct_topk & ~mask
+    correct_by_group = correct_topk.any(dim=-1)
+    remask = torch.zeros_like(mask).bool()
+
+    if len(correct_by_group.shape) == 1: # for split
+      num_incorrect = (~correct_by_group).long()
+      remask_scores = -logits[torch.arange(logits.shape[0]), tokens]
+    else: # for vq
+      num_incorrect = (~correct_by_group).sum(dim=-1)
+      remask_scores = num_incorrect
+    num_incorrect[mask] = 0
+    num_remask = int(num_incorrect.bool().sum() * remask_prob)
+    remask_indices = torch.topk(remask_scores, num_remask).indices
+    remask[remask_indices] = True
+    remask = remask & ~mask
     return remask
 
   @torch.no_grad()
@@ -310,17 +319,17 @@ class MAR(nn.Module):
           split_logits = self.split_head(x)
           # remask tokens that have poor confidence
           if i > num_iters * self.remask_stage:
-            remask = self.get_remask(split_logits, split_d, mask_d)
+            remask = self.get_remask(split_logits, split_d, mask_d, remask_prob=0.2)
             mask_to_pred = mask_to_pred | remask
           ix = sample(split_logits[mask_to_pred], temperature=temperature)
           split_d[mask_to_pred] = ix
           token_embedding_d[mask_to_pred] = self.split_emb(ix)
         else:
           vq_logits = self.vq_head(x)
-          if i > num_iters * self.remask_stage:
-            vq_logits = vq_logits.reshape(-1, self.vq_groups, self.vq_size)
-            remask = self.get_remask(vq_logits, vq_indices_d, mask_d, topk=5)
-            mask_to_pred = mask_to_pred | remask
+          # if i > num_iters * self.remask_stage:
+          #   vq_logits = vq_logits.reshape(-1, self.vq_groups, self.vq_size)
+          #   remask = self.get_remask(vq_logits, vq_indices_d, mask_d, topk=5, remask_prob=0.1)
+          #   mask_to_pred = mask_to_pred | remask
           vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
           ix = sample(vq_logits, temperature=temperature)
           ix = ix.reshape(-1, self.vq_groups)
