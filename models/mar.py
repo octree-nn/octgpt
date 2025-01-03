@@ -7,9 +7,10 @@ import copy
 import ocnn
 import torch
 import torch.nn as nn
+from torch.nn import LayerNorm
 import torch.nn.functional as F
 from models.octformer import OctFormer, OctreeT
-from models.positional_embedding import SinPosEmb
+from models.positional_embedding import SinPosEmb, RMSNorm
 from models.vae import DiagonalGaussian
 from utils.utils import seq2octree, sample, depth2batch, batch2depth, \
     get_depth2batch_indices, get_batch_id, export_octree
@@ -31,9 +32,9 @@ class MAR(nn.Module):
                buffer_size=64,
                drop_rate=0.1,
                pos_emb_type="SinPosEmb",
+               norm_type="LayerNorm",
                use_checkpoint=True,
                use_swin=True,
-               num_vq_blocks=2,
                random_flip=0.0,
                mask_ratio_min=0.7,
                start_temperature=1.0,
@@ -52,10 +53,10 @@ class MAR(nn.Module):
     self.buffer_size = buffer_size
     self.drop_rate = drop_rate
     self.pos_emb_type = pos_emb_type
+    self.norm_type = norm_type
     self.use_checkpoint = use_checkpoint
     self.use_swin = use_swin
     self.use_flex = False
-    self.num_vq_blocks = num_vq_blocks
     self.random_flip = random_flip
     self.start_temperature = start_temperature
     self.remask_stage = remask_stage
@@ -96,9 +97,9 @@ class MAR(nn.Module):
         channels=self.num_embed, num_blocks=self.num_blocks, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        pos_emb=eval(self.pos_emb_type), nempty=False,
+        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type), nempty=False,
         use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
-    self.ln_x = nn.LayerNorm(self.num_embed)
+    self.ln_x = eval(self.norm_type)(self.num_embed)
 
   def _init_weights(self, module):
     if isinstance(module, (nn.Linear, nn.Embedding)):
@@ -200,7 +201,7 @@ class MAR(nn.Module):
     split_logits = self.split_head(x[:nnum_split])
     output['split_loss'] = F.cross_entropy(
         split_logits[mask_split], targets_split[mask_split])
-    
+
     with torch.no_grad():
       correct_top1 = self.get_correct_topk(
           split_logits[mask_split], targets_split[mask_split], topk=1)
@@ -219,8 +220,8 @@ class MAR(nn.Module):
     # Top-k Accuracy
     with torch.no_grad():
       correct_top5 = self.get_correct_topk(
-          vq_logits[mask_vq].reshape(-1, self.vq_size), 
-          targets_vq[mask_vq].reshape(-1), 
+          vq_logits[mask_vq].reshape(-1, self.vq_size),
+          targets_vq[mask_vq].reshape(-1),
           topk=5)
       output['top5_accuracy'] = correct_top5.sum().float() / \
           (mask_vq.sum().float() * self.vq_groups)
@@ -237,10 +238,10 @@ class MAR(nn.Module):
     correct_by_group = correct_topk.any(dim=-1)
     remask = torch.zeros_like(mask).bool()
 
-    if len(correct_by_group.shape) == 1: # for split
+    if len(correct_by_group.shape) == 1:  # for split
       num_incorrect = (~correct_by_group).long()
       remask_scores = -logits[torch.arange(logits.shape[0]), tokens]
-    else: # for vq
+    else:  # for vq
       num_incorrect = (~correct_by_group).sum(dim=-1)
       remask_scores = num_incorrect
     num_incorrect[mask] = 0
@@ -319,7 +320,8 @@ class MAR(nn.Module):
           split_logits = self.split_head(x)
           # remask tokens that have poor confidence
           if i > num_iters * self.remask_stage:
-            remask = self.get_remask(split_logits, split_d, mask_d, remask_prob=0.2)
+            remask = self.get_remask(
+                split_logits, split_d, mask_d, remask_prob=0.2)
             mask_to_pred = mask_to_pred | remask
           ix = sample(split_logits[mask_to_pred], temperature=temperature)
           split_d[mask_to_pred] = ix
@@ -352,88 +354,23 @@ class MAR(nn.Module):
     return octree, vq_code
 
 
-class MARUNet(MAR):
-  def _init_blocks(self):
-    self.blocks = OctFormer(
-        channels=self.num_embed, num_blocks=self.num_blocks, num_heads=self.num_heads,
-        patch_size=self.patch_size, dilation=self.dilation,
-        attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        pos_emb=eval(self.pos_emb_type), nempty=False,
-        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
-    self.ln_x = nn.LayerNorm(self.num_embed)
-
-    self.vq_encoder = OctFormer(
-        channels=self.num_embed, num_blocks=self.num_vq_blocks//2, num_heads=self.num_heads,
-        patch_size=self.patch_size, dilation=self.dilation,
-        attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        pos_emb=eval(self.pos_emb_type), nempty=False,
-        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
-    self.downsample = ocnn.modules.OctreeConvGnRelu(
-        self.num_embed, self.num_embed, group=32, kernel_size=[2], stride=2)
-
-    self.vq_decoder = OctFormer(
-        channels=self.num_embed, num_blocks=self.num_vq_blocks//2, num_heads=self.num_heads,
-        patch_size=self.patch_size, dilation=self.dilation,
-        attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        pos_emb=eval(self.pos_emb_type), nempty=False,
-        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
-    self.upsample = ocnn.modules.OctreeDeconvGnRelu(
-        self.num_embed, self.num_embed, group=32, kernel_size=[2], stride=2)
-
-  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
-    # if only split signals, not use vq sample
-    apply_vq_sample = nnum_split < x.shape[0]
-    if apply_vq_sample:
-      depth_list_main = list(range(depth_low, depth_high)) + [depth_high - 1]
-    else:
-      depth_list_main = list(range(depth_low, depth_high + 1))
-
-    depth_list_vq = list(range(depth_low, depth_high + 1))
-    octreeT_vq = OctreeT(
-        octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
-        depth_list=depth_list_vq, use_swin=self.use_swin, use_flex=self.use_flex)
-    x = self.forward_blocks(x, octreeT_vq, self.vq_encoder)
-    if apply_vq_sample:
-      x_split = x[:nnum_split]
-      x_vq = x[nnum_split:]
-      x_vq = self.downsample(x_vq, octree, depth_high)
-      x = torch.cat([x_split, x_vq], dim=0)
-
-    octreeT = OctreeT(
-        octree, x.shape[0], self.patch_size, self.dilation,
-        nempty=False, depth_list=depth_list_main, use_swin=self.use_swin)
-    x = self.forward_blocks(
-        x, octreeT, self.blocks)
-
-    if apply_vq_sample:
-      # skip connection
-      x_split = x[:nnum_split]
-      x_vq = x[nnum_split:] + x_vq
-      x_vq = self.upsample(x_vq, octree, depth_high - 1)
-      x = torch.cat([x_split, x_vq], dim=0)
-    x = self.forward_blocks(x, octreeT_vq, self.vq_decoder)
-
-    x = self.ln_x(x)
-    return x
-
-
 class MAREncoderDecoder(MAR):
   def _init_blocks(self):
     self.encoder = OctFormer(
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        pos_emb=eval(self.pos_emb_type), nempty=False,
+        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type), nempty=False,
         use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
-    self.encoder_ln = nn.LayerNorm(self.num_embed)
+    self.encoder_ln = eval(self.norm_type)(self.num_embed)
 
     self.decoder = OctFormer(
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        pos_emb=eval(self.pos_emb_type), nempty=False,
+        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type), nempty=False,
         use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
-    self.decoder_ln = nn.LayerNorm(self.num_embed)
+    self.decoder_ln = eval(self.norm_type)(self.num_embed)
 
   def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split):
     batch_size = octree.batch_size

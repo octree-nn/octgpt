@@ -7,7 +7,7 @@ from thsolver.tracker import AverageTracker
 from ognn.octreed import OctreeD
 from utils import utils, builder
 from utils.distributed import get_rank
-from models.mar import MAR, MARUNet, MAREncoderDecoder
+from models.mar import MAR, MAREncoderDecoder
 from datasets import get_shapenet_dataset
 from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num
 from tqdm import tqdm
@@ -26,8 +26,6 @@ class OctarSolver(Solver):
   def get_model(self, flags):
     if flags.model_name == "MAR":
       model = MAR(vqvae_config=flags.VQVAE, **flags.GPT)
-    elif flags.model_name == "MARUNet":
-      model = MARUNet(vqvae_config=flags.VQVAE, **flags.GPT)
     elif flags.model_name == "MAREncoderDecoder":
       model = MAREncoderDecoder(vqvae_config=flags.VQVAE, **flags.GPT)
     else:

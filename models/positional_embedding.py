@@ -56,12 +56,13 @@ def compute_mixed_cis(freqs: torch.Tensor, xyz: torch.Tensor, num_heads: int):
   # No float 16 for this range
   with torch.autocast("cuda", enabled=False):
     freqs_x = (t_x.unsqueeze(-1) @
-              freqs[0].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
+               freqs[0].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
     freqs_y = (t_y.unsqueeze(-1) @
-              freqs[1].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
+               freqs[1].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
     freqs_z = (t_z.unsqueeze(-1) @
-              freqs[2].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
-    freqs_cis = torch.polar(torch.ones_like(freqs_x), freqs_x + freqs_y + freqs_z)
+               freqs[2].unsqueeze(-2)).view(N, num_heads, -1).permute(1, 0, 2)
+    freqs_cis = torch.polar(torch.ones_like(
+        freqs_x), freqs_x + freqs_y + freqs_z)
   return freqs_cis
 
 
@@ -103,9 +104,6 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
   xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(2)
   xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(2)
   return xq_out.type_as(xq).to(xq.device), xk_out.type_as(xk).to(xk.device)
-
-
-
 
 
 class RotaryPosEmb(torch.nn.Module):
@@ -235,3 +233,17 @@ class OctreeConvPosEmb(torch.nn.Module):
         break
     position_embeddings = torch.cat(position_embeddings, dim=0)
     return position_embeddings
+
+
+class RMSNorm(torch.nn.Module):
+  def __init__(self, dim: int, eps: float = 1e-6):
+    super().__init__()
+    self.eps = eps
+    self.weight = nn.Parameter(torch.ones(dim))
+
+  def _norm(self, x):
+    return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+  def forward(self, x):
+    output = self._norm(x.float()).type_as(x)
+    return output * self.weight

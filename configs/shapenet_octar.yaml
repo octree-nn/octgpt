@@ -101,6 +101,7 @@ MODEL:
     dilation: 2
     drop_rate: 0.1
     pos_emb_type: SinPosEmb
+    norm_type: LayerNorm
     use_checkpoint: True
     use_swin: True
     random_flip: 0.1

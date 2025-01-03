@@ -7,12 +7,13 @@
 
 import numpy as np
 import torch
+from torch.nn import LayerNorm
 import torch.nn.functional as F
 import ocnn
 from ocnn.octree import Octree
 from typing import Optional
 from torch.utils.checkpoint import checkpoint
-from models.positional_embedding import RotaryPosEmb, SinPosEmb, FULL_DEPTH, MAX_DEPTH
+from models.positional_embedding import RotaryPosEmb, SinPosEmb, FULL_DEPTH, MAX_DEPTH, RMSNorm
 from utils.utils import get_depth2batch_indices, depth2batch, batch2depth
 
 
@@ -323,14 +324,15 @@ class OctFormerBlock(torch.nn.Module):
                qk_scale: Optional[float] = None, attn_drop: float = 0.0,
                proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
                use_swin: bool = False, pos_emb: torch.nn.Module = SinPosEmb,
+               norm_layer: torch.nn.Module = LayerNorm,
                activation: torch.nn.Module = torch.nn.GELU,
                **kwargs):
     super().__init__()
-    self.norm1 = torch.nn.LayerNorm(dim)
+    self.norm1 = norm_layer(dim)
     self.attention = OctreeAttention(dim, patch_size, num_heads, qkv_bias,
                                      qk_scale, attn_drop, proj_drop, dilation,
                                      use_swin=use_swin)
-    self.norm2 = torch.nn.LayerNorm(dim)
+    self.norm2 = norm_layer(dim)
     self.mlp = MLP(dim, int(dim * mlp_ratio), dim, activation, proj_drop)
     # self.drop_path = ocnn.nn.OctreeDropPath(drop_path, nempty)
     self.dropout = torch.nn.Dropout(drop_path)
@@ -353,10 +355,11 @@ class OctFormerStage(torch.nn.Module):
                dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
                qk_scale: Optional[float] = None, attn_drop: float = 0.0,
                proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
-               activation: torch.nn.Module = torch.nn.GELU, interval: int = 6,
-               use_swin: bool = False,
+               interval: int = 6, use_swin: bool = False, num_blocks: int = 2,
                pos_emb: torch.nn.Module = SinPosEmb,
-               use_checkpoint: bool = True, num_blocks: int = 2,
+               norm_layer: torch.nn.Module = LayerNorm,
+               activation: torch.nn.Module = torch.nn.GELU,
+               use_checkpoint: bool = True,
                octformer_block=OctFormerBlock, **kwargs):
     super().__init__()
     self.num_blocks = num_blocks
@@ -370,9 +373,9 @@ class OctFormerStage(torch.nn.Module):
         mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
         use_swin=((i // 2) % 2 == 1) if use_swin else False,
-        drop_path=drop_path[i] if isinstance(
-            drop_path, list) else drop_path,
-        nempty=nempty, activation=activation) for i in range(num_blocks)])
+        drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+        nempty=nempty, activation=activation, norm_layer=norm_layer) 
+        for i in range(num_blocks)])
     # self.norms = torch.nn.ModuleList([
     #         torch.nn.BatchNorm1d(dim) for _ in range(self.num_norms)])
 
@@ -394,6 +397,7 @@ class OctFormer(torch.nn.Module):
                patch_size: int = 26, dilation: int = 4,
                drop_path: float = 0.5, attn_drop: float = 0.1, proj_drop: float = 0.1,
                pos_emb: torch.nn.Module = SinPosEmb,
+               norm_layer: torch.nn.Module = LayerNorm,
                nempty: bool = False, use_checkpoint: bool = True,
                use_swin: bool = False, use_flex: bool = True, **kwargs):
     super().__init__()
@@ -408,6 +412,7 @@ class OctFormer(torch.nn.Module):
         # drop_path=torch.linspace(0, drop_path, num_blocks).tolist(),
         dilation=dilation, nempty=nempty, num_blocks=num_blocks,
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
+        norm_layer=norm_layer,
         use_checkpoint=use_checkpoint, use_swin=use_swin)
 
   def forward(self, data: torch.Tensor, octree: OctreeT):
