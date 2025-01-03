@@ -2,7 +2,7 @@ SOLVER:
   gpu: 4,5,6,7,
   run: train
 
-  logdir: logs/shapenet_ar/im5_sketch_cond2
+  logdir: logs/shapenet_ar/im5_sketch_concat_condln
   max_epoch: 200
   test_every_epoch: 1
   log_per_iter: 50
@@ -42,7 +42,7 @@ DATA:
     # sdf & color samples
     volume_sample_num: &volume_sample_num 10000
     surface_sample_num: &surface_sample_num 10000
-    # max_points: 120000
+    max_points: 100000
 
     # no data augmentation
     distort: &distort False
@@ -50,7 +50,8 @@ DATA:
     # data loading
     location: &location /mnt/sdc/weist/data/ShapeNet/dataset_new/
     filelist: &filelist /mnt/sdc/weist/data/ShapeNet/filelist/train_im_5.txt
-    load_image: &load_image True
+    load_sketch: &load_sketch True
+    load_image: &load_image False
     image_location: &image_location /mnt/sdc/weist/data/ShapeNet/sketch_256
 
     load_pointcloud: &load_pointcloud True
@@ -76,6 +77,7 @@ DATA:
     # data loading
     location: *location
     filelist: /mnt/sdc/weist/data/ShapeNet/filelist/test_im_5.txt
+    load_sketch: *load_sketch
     load_image: *load_image
     image_location: *image_location
 
@@ -103,7 +105,8 @@ MODEL:
     feature: ND
   
   GPT:
-    num_embed: 192
+    context_dim: 768
+    num_embed: 384
     num_heads: 8
     num_blocks: 16
     num_classes: 1

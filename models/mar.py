@@ -78,6 +78,7 @@ class MAR(nn.Module):
           num_embed=num_embed, num_heads=num_heads, dropout=drop_rate, context_dim=context_dim)
       else: # Useless, just for reading existing checkpoint that are saved before cleaning the code
         self.cond_ln = nn.LayerNorm(context_dim)
+        self.cond_linear = nn.Linear(context_dim, num_embed)
         self.cond_preln = nn.LayerNorm(num_embed)
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=num_embed, 
@@ -144,9 +145,12 @@ class MAR(nn.Module):
       batch_id = get_batch_id(octree, depth_list)
       mask_tokens = cond[batch_id]
     elif self.condition_type == 'image':
-      mask_tokens = self.mask_token.repeat(x.shape[0], 1)
-      # mask_tokens = cond.reshape(-1, self.num_embed).mean(dim=0, keepdim=True)
-      # mask_tokens = mask_tokens.repeat(x.shape[0], 1)
+      # mask_tokens = self.mask_token.repeat(x.shape[0], 1)
+      buffer = cond.squeeze(0)
+      buffer = self.cond_ln(buffer)
+      buffer = self.cond_linear(buffer)
+      mask_tokens = buffer.reshape(-1, self.num_embed).mean(dim=0, keepdim=True)
+      mask_tokens = mask_tokens.repeat(x.shape[0], 1)
     x = torch.where(mask.bool().unsqueeze(1), mask_tokens, x)
     return x
 
@@ -453,8 +457,8 @@ class MAREncoderDecoder(MAR):
       mask = torch.cat([mask_buffer, mask], dim=0)
     elif self.condition_type == 'image' and self.condition_policy == 'concat':
       buffer = cond.squeeze(0)
-      buffer = buffer.repeat(3, 1)
       buffer = self.cond_ln(buffer)
+      buffer = self.cond_linear(buffer)
       self.buffer_size = buffer.shape[0]
       x = torch.cat([buffer, x], dim=0)
       mask = torch.cat([torch.zeros(buffer.shape[0], device=x.device).bool(), mask], dim=0)

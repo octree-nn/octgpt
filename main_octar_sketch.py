@@ -205,7 +205,7 @@ class OctarCondSolver(Solver):
     # export the octree
     for d in range(self.full_depth + 1, self.depth_stop + 1):
       utils.export_octree(octree_out, d, os.path.join(
-          self.logdir, f'results/octree_depth{d}'), index=index)
+          self.logdir, f'results/eval/octree_depth{d}'), index=index)
 
     # decode the octree
     for d in range(self.depth_stop, self.depth):
@@ -222,7 +222,7 @@ class OctarCondSolver(Solver):
     # extract the mesh
     utils.create_mesh(
         output['neural_mpu'],
-        os.path.join(self.logdir, f"results/{index}.obj"),
+        os.path.join(self.logdir, f"results/eval/{index}.obj"),
         size=self.FLAGS.SOLVER.resolution,
         bbmin=-self.FLAGS.SOLVER.sdf_scale,
         bbmax=self.FLAGS.SOLVER.sdf_scale,
@@ -234,10 +234,15 @@ class OctarCondSolver(Solver):
       image = image[0][:3].transpose(1, 2, 0) * 255
       image = image.astype('uint8')
       image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-      cv2.imwrite(os.path.join(self.logdir, f"results/{index}.png"), image)
+      cv2.imwrite(os.path.join(self.logdir, f"results/eval/{index}.png"), image)
 
   @torch.no_grad()
   def eval_step(self, batch):
+    
+    import random
+    if random.random() > 0.1:
+      return  # skip 90% of the data for a quick evaluation
+    
     index = batch['filename'][0].split('/')[-1]
     self.batch_to_cuda(batch)
     octree_out = ocnn.octree.init_octree(
