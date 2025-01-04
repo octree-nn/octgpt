@@ -201,37 +201,68 @@ class SinPosEmb(torch.nn.Module):
     return position_embeddings
 
 
-class OctreeConvPosEmb(torch.nn.Module):
-  def __init__(self, num_embed: int, full_depth: int = FULL_DEPTH, max_depth: int = MAX_DEPTH, groups: int = 32, nempty: bool = False):
+class AbsPosEmb(torch.nn.Module):
+  def __init__(self, num_embed: int, full_depth: int = FULL_DEPTH, max_depth: int = MAX_DEPTH):
     super().__init__()
+    self.num_embed = num_embed
     self.full_depth = full_depth
     self.max_depth = max_depth
-    self.conv = torch.nn.ModuleList([
-        ocnn.modules.OctreeConvGnRelu(
-            in_channels=num_embed, out_channels=num_embed, group=groups, nempty=nempty)
-        for i in range(max_depth - full_depth + 1)])
+    self.absolute_emb = torch.nn.Parameter(self.init_absolute_emb())
     self.depth_emb = torch.nn.Embedding(
         self.max_depth - self.full_depth + 1, num_embed)
 
-  def forward(self, data: torch.Tensor, octree: Octree, depth_low: int = None, depth_high: int = None):
-    position_embeddings = []
-    cur_seq_len = 0
-    if depth_low is None:
-      depth_low = octree.start_depth
-    if depth_high is None:
-      depth_high = octree.max_depth
-    for d in range(depth_low, depth_high + 1):
-      nnum_d = octree.nnum[d]
-      # clone the data to avoid in-place operation
-      data_d = data[cur_seq_len:cur_seq_len + nnum_d].clone()
-      pos_emb_d = self.conv[d - depth_low](data_d, octree, d)
-      depth_emb_d = self.depth_emb(torch.tensor(
-          [d - self.full_depth], device=octree.device))
-      position_embeddings.append(pos_emb_d + depth_emb_d)
-      cur_seq_len += nnum_d
-      if cur_seq_len >= data.shape[0]:
-        break
-    position_embeddings = torch.cat(position_embeddings, dim=0)
+  def get_emb(self, sin_inp):
+    """
+    Gets a base embedding for one dimension with sin and cos intertwined
+    """
+    emb = torch.stack((sin_inp.sin(), sin_inp.cos()), dim=-1)
+    return torch.flatten(emb, -2, -1)
+
+  def init_absolute_emb(self):
+    xyz = torch.arange(0, 2 ** (self.max_depth + 1)).repeat(3, 1).t()
+    pos_x, pos_y, pos_z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+
+    channels = int(np.ceil(self.num_embed / 6) * 2)
+    if channels % 2:
+      channels += 1
+
+    inv_freq = 1.0 / (100 ** (torch.arange(0, channels, 2).float() / channels))
+
+    sin_inp_x = torch.einsum("i,j->ij", pos_x, inv_freq)
+    sin_inp_y = torch.einsum("i,j->ij", pos_y, inv_freq)
+    sin_inp_z = torch.einsum("i,j->ij", pos_z, inv_freq)
+    emb_x = self.get_emb(sin_inp_x)
+    emb_y = self.get_emb(sin_inp_y)
+    emb_z = self.get_emb(sin_inp_z)
+    emb = torch.zeros((pos_x.shape[0], channels * 3))
+    emb[:, : channels] = emb_x
+    emb[:, channels: 2 * channels] = emb_y
+    emb[:, 2 * channels:] = emb_z
+
+    return emb[:, :self.num_embed]
+
+  def get_3d_pos_emb(self, xyz):
+    pos_x, pos_y, pos_z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+    device = xyz.device
+
+    channels = int(np.ceil(self.num_embed / 6) * 2)
+    if channels % 2:
+      channels += 1
+
+    index_x = torch.meshgrid(pos_x.long(), torch.arange(channels, device=device))
+    index_y = torch.meshgrid(pos_y.long(), torch.arange(channels, device=device))
+    index_z = torch.meshgrid(pos_z.long(), torch.arange(channels, device=device))
+    emb_x = self.absolute_emb[index_x]
+    emb_y = self.absolute_emb[index_y]
+    emb_z = self.absolute_emb[index_z]
+
+    emb = torch.cat([emb_x, emb_y, emb_z], dim=1)
+    return emb[:, :self.num_embed]
+
+  def forward(self, data: torch.Tensor, octree: Octree):
+    depth_embedding = self.depth_emb(octree.depth_idx)
+    position_embeddings = self.get_3d_pos_emb(octree.xyz)
+    position_embeddings += depth_embedding
     return position_embeddings
 
 

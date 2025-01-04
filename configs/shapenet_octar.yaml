@@ -7,6 +7,7 @@ SOLVER:
   test_every_epoch: 1
   log_per_iter: 50
   ckpt_num: 10
+  expand_ckpt: False
   port: 20001
 
   # optimizer

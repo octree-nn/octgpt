@@ -6,6 +6,7 @@ from thsolver import Solver
 from thsolver.tracker import AverageTracker
 from ognn.octreed import OctreeD
 from utils import utils, builder
+from utils.expand_ckpt import expand_checkpoint
 from utils.distributed import get_rank
 from models.mar import MAR, MAREncoderDecoder
 from datasets import get_shapenet_dataset
@@ -186,6 +187,43 @@ class OctarSolver(Solver):
         f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.numel()} indices are different")
     self.export_results(octree_in, index + 1, gt_vq_code)
     self.export_results(octree_out, index, vq_code)
+  
+  def load_checkpoint(self):
+    ckpt = self.FLAGS.SOLVER.ckpt
+    if not ckpt:
+      # If ckpt is empty, then get the latest checkpoint from ckpt_dir
+      if not os.path.exists(self.ckpt_dir):
+        return
+      ckpts = sorted(os.listdir(self.ckpt_dir))
+      ckpts = [ck for ck in ckpts if ck.endswith('solver.tar')]
+      if len(ckpts) > 0:
+        ckpt = os.path.join(self.ckpt_dir, ckpts[-1])
+    if not ckpt:
+      return  # return if ckpt is still empty
+
+    # load trained model
+    # check: map_location = {'cuda:0' : 'cuda:%d' % self.rank}
+    trained_dict = torch.load(ckpt, map_location='cuda')
+    if ckpt.endswith('.solver.tar'):
+      model_dict = trained_dict['model_dict']
+      self.start_epoch = trained_dict['epoch'] + 1  # !!! add 1
+      if self.optimizer:
+        self.optimizer.load_state_dict(trained_dict['optimizer_dict'])
+      if self.scheduler:
+        self.scheduler.load_state_dict(trained_dict['scheduler_dict'])
+      if self.scaler and 'scaler_dict' in trained_dict:
+        self.scaler.load_state_dict(trained_dict['scaler_dict'])
+    else:
+      model_dict = trained_dict
+    model = self.model.module if self.world_size > 1 else self.model
+    if self.FLAGS.SOLVER.expand_ckpt:
+      model_dict = expand_checkpoint(model, model_dict)
+    model.load_state_dict(model_dict)
+
+    # print messages
+    if self.is_master:
+      tqdm.write('Load the checkpoint: %s' % ckpt)
+      tqdm.write('The start_epoch is %d' % self.start_epoch)
 
 
 if __name__ == '__main__':
