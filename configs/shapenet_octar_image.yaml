@@ -1,0 +1,20 @@
+BASE:
+  - configs/shapenet_octar.yaml
+
+DATA:
+  train:
+    load_sketch: &load_sketch True
+    load_image: &load_image False
+    image_location: &image_location data/ShapeNet/sketch_256
+
+  test:
+    load_sketch: *load_sketch
+    load_image: *load_image
+    image_location: *image_location
+    
+MODEL:
+  GPT:
+    buffer_size: 196
+    condition_type: image
+    condition_policy: cross_attn
+    context_dim: 768

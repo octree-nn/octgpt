@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 from torch.nn import LayerNorm
 import torch.nn.functional as F
-from models.condition import ConditionCrossAttn
 from models.octformer import OctFormer, OctreeT
 from models.positional_embedding import SinPosEmb, RMSNorm
 from models.vae import DiagonalGaussian
@@ -53,18 +52,19 @@ class MAR(nn.Module):
     self.num_blocks = num_blocks
     self.patch_size = patch_size
     self.dilation = dilation
-    self.buffer_size = buffer_size if condition_type in ['None', 'category'] else 0
+    self.buffer_size = buffer_size
     self.drop_rate = drop_rate
     self.pos_emb_type = pos_emb_type
     self.norm_type = norm_type
     self.use_checkpoint = use_checkpoint
     self.use_swin = use_swin
-    self.use_flex = False
     self.random_flip = random_flip
     self.start_temperature = start_temperature
     self.remask_stage = remask_stage
     self.num_iters = num_iters
     self.condition_type = condition_type
+    self.condition_policy = condition_policy
+    self.context_dim = context_dim
     self.split_size = 2  # 0/1 indicates the split signals
     self.num_vq_embed = vqvae_config.embedding_channels
 
@@ -79,29 +79,14 @@ class MAR(nn.Module):
 
     self.split_emb = nn.Embedding(self.split_size, num_embed)
     self.class_emb = nn.Embedding(num_classes, num_embed)
-    
-    self.condition_policy = condition_policy
-    if condition_type not in ['None', 'category']:
-      self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
-      if condition_policy == 'cross_attn':
-        self.cond_encoder = ConditionCrossAttn(
-          num_embed=num_embed, num_heads=num_heads, dropout=drop_rate, context_dim=context_dim)
-      else: # Useless, just for reading existing checkpoint that are saved before cleaning the code
-        self.cond_ln = nn.LayerNorm(context_dim)
-        self.cond_linear = nn.Linear(context_dim, num_embed)
-        self.cond_preln = nn.LayerNorm(num_embed)
-        self.cross_attn = nn.MultiheadAttention(
-            embed_dim=num_embed, 
-            num_heads=num_heads,
-            dropout=drop_rate,
-            kdim=context_dim,
-            vdim=context_dim,
-            batch_first=True
-        )
-        self.cond_postln = nn.LayerNorm(num_embed)
-        
     self.vq_proj = nn.Linear(self.num_vq_embed, num_embed)
 
+    if condition_type in ["image"]:
+      self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
+      self.ln_cond = eval(self.norm_type)(num_embed)
+      self.cond_proj = nn.Linear(context_dim, num_embed)
+
+    # Initialize the blocks
     self._init_blocks()
 
     self.split_head = nn.Linear(num_embed, self.split_size)
@@ -113,8 +98,6 @@ class MAR(nn.Module):
     self.apply(self._init_weights)  # initialize weights
     if condition_type not in ['None', 'category']:
       self._init_weights(self.mask_token)
-    logger.info("number of parameters: %e", sum(p.numel()
-                for p in self.parameters()))
 
   def _init_blocks(self):
     self.blocks = OctFormer(
@@ -154,37 +137,48 @@ class MAR(nn.Module):
       batch_id = get_batch_id(octree, depth_list)
       mask_tokens = cond[batch_id]
     elif self.condition_type == 'image':
-      # mask_tokens = self.mask_token.repeat(x.shape[0], 1)
-      buffer = cond.squeeze(0)
-      buffer = self.cond_ln(buffer)
-      buffer = self.cond_linear(buffer)
-      mask_tokens = buffer.reshape(-1, self.num_embed).mean(dim=0, keepdim=True)
-      mask_tokens = mask_tokens.repeat(x.shape[0], 1)
+      mask_tokens = self.mask_token.repeat(x.shape[0], 1)
     x = torch.where(mask.bool().unsqueeze(1), mask_tokens, x)
     return x
 
-  def forward_blocks(self, x, octree: OctreeT, blocks, use_cond=False, cond=None):
-    x = depth2batch(x, octree.indices)
-    if self.condition_policy == 'cross_attn' and use_cond:
-      x = blocks(x, octree, cond=cond, cond_enc=self.cond_encoder)
-    else:
-      x = blocks(x, octree)
-    x = batch2depth(x, octree.indices)
-    return x
+  def add_buffer(self, x, mask, cond):
+    batch_size = cond.shape[0]
+    # Add condition to the input
+    if len(cond.shape) == 2:  # For None, category, CLIP
+      buffer = cond.reshape(batch_size, 1, -1)
+      buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
+    elif len(cond.shape) == 3:  # For ViT, DINOv2
+      assert self.buffer_size == cond.shape[1]
+      buffer = self.cond_proj(self.ln_cond(cond))
+      buffer = buffer.reshape(-1, self.num_embed)
 
-  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split,cond=None):
-    depth_list = list(range(depth_low, depth_high + 1))
-
-    buffer = cond.reshape(octree.batch_size, 1, -1)
-    buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
     mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
     x = torch.cat([buffer, x], dim=0)
     mask = torch.cat([mask_buffer, mask], dim=0)
+    return x, mask
+
+  def forward_blocks(self, x, octree: OctreeT, blocks, context: torch.Tensor):
+    x = depth2batch(x, octree.indices)
+    x = blocks(x, octree, context)
+    x = batch2depth(x, octree.indices)
+    return x
+
+  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split, cond=None):
+    depth_list = list(range(depth_low, depth_high + 1))
+    if self.condition_type in ["None", "category"]:
+      buffer = cond.reshape(octree.batch_size, 1, -1)
+      buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
+      mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
+      x = torch.cat([buffer, x], dim=0)
+      mask = torch.cat([mask_buffer, mask], dim=0)
+      context = None
+    elif self.condition_type == "image":
+      pass
 
     octreeT = OctreeT(
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
         depth_list=depth_list, use_swin=self.use_swin, buffer_size=self.buffer_size)
-    x = self.forward_blocks(x, octreeT, self.blocks,cond=cond)
+    x = self.forward_blocks(x, octreeT, self.blocks, context)
     x = self.ln_x(x)
     return x
 
@@ -196,13 +190,10 @@ class MAR(nn.Module):
       cond = self.class_emb(condition)  # 1 x C
     elif self.condition_type == "category":
       cond = self.class_emb(condition)
-    elif self.condition_type == 'image':
+    elif self.condition_type == "image":
       cond = condition
 
     targets_split = split.clone().detach()
-    # if self.random_flip > 0.0:
-    #   flip = torch.rand_like(split.float()) < self.random_flip
-    #   split = torch.where(flip, 1 - split, split)
     split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
     nnum_split = split_token_embeddings.shape[0]
 
@@ -398,68 +389,45 @@ class MAREncoderDecoder(MAR):
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type), nempty=False,
-        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin, cond_interval=3)
+        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint, 
+        use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
+        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.encoder_ln = eval(self.norm_type)(self.num_embed)
 
     self.decoder = OctFormer(
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type), nempty=False,
-        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin)
+        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint, 
+        use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
+        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.decoder_ln = eval(self.norm_type)(self.num_embed)
 
-  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split,cond=None):
+  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split, cond=None):
     batch_size = octree.batch_size
     depth_list = list(range(depth_low, depth_high + 1))
+    x, mask = self.add_buffer(x, mask, cond)
+    if self.condition_type in ["image"] and self.condition_policy == "cross_attn":
+      context = cond
+    else:
+      context = None
 
-    # Add condition to the input
-    if self.condition_type in ['None', 'category']:
-      buffer = cond.reshape(octree.batch_size, 1, -1)
-      buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
-      mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
-      x = torch.cat([buffer, x], dim=0)
-      mask = torch.cat([mask_buffer, mask], dim=0)
-    elif self.condition_type == 'image' and self.condition_policy == 'concat':
-      buffer = cond.squeeze(0)
-      buffer = self.cond_ln(buffer)
-      buffer = self.cond_linear(buffer)
-      self.buffer_size = buffer.shape[0]
-      x = torch.cat([buffer, x], dim=0)
-      mask = torch.cat([torch.zeros(buffer.shape[0], device=x.device).bool(), mask], dim=0)
-    
     x_enc = x.clone()
     x_enc = x_enc[~mask]
-    
-    if len(x_enc):
-      octreeT_encoder = OctreeT(
-          octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
-          depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
-          data_mask=mask, buffer_size=self.buffer_size)
-      x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, True, cond=cond)
-      x_enc = self.encoder_ln(x_enc)
+    octreeT_encoder = OctreeT(
+        octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
+        depth_list=depth_list, use_swin=self.use_swin,
+        data_mask=mask, buffer_size=self.buffer_size)
+    x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, context)
+    x_enc = self.encoder_ln(x_enc)
     x[~mask] = x_enc
-    
+
     octreeT_decoder = OctreeT(
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
-        depth_list=depth_list, use_swin=self.use_swin, use_flex=self.use_flex,
+        depth_list=depth_list, use_swin=self.use_swin,
         buffer_size=self.buffer_size)
-    x = self.forward_blocks(x, octreeT_decoder, self.decoder, cond=cond)
+    x = self.forward_blocks(x, octreeT_decoder, self.decoder, context)
     x = self.decoder_ln(x)
     x = x[batch_size * self.buffer_size:]
 
     return x
-
-
-def focal_loss(inputs, targets, alpha=0.25, gamma=2):
-  """
-  inputs: (N, 2) logits for negative and positive classes
-  targets: (N) ground truth labels, with values in {0, 1}
-  """
-  BCE_loss = F.cross_entropy(inputs, targets, reduction='none')
-  # prevents nan as pt -> +inf when the initial loss is high
-  pt = torch.exp(-BCE_loss)
-  alpha_t = alpha * (1.0 - targets) + (1.0 - alpha) * targets
-  F_loss = alpha_t * (1 - pt) ** gamma * BCE_loss
-  return torch.mean(F_loss)

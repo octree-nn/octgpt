@@ -323,7 +323,8 @@ class OctFormerBlock(torch.nn.Module):
                dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
                qk_scale: Optional[float] = None, attn_drop: float = 0.0,
                proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
-               use_swin: bool = False, pos_emb: torch.nn.Module = SinPosEmb,
+               use_swin: bool = False, use_ctx: bool = False, ctx_dim: int = None,
+               pos_emb: torch.nn.Module = SinPosEmb,
                norm_layer: torch.nn.Module = LayerNorm,
                activation: torch.nn.Module = torch.nn.GELU,
                **kwargs):
@@ -337,13 +338,24 @@ class OctFormerBlock(torch.nn.Module):
     # self.drop_path = ocnn.nn.OctreeDropPath(drop_path, nempty)
     self.dropout = torch.nn.Dropout(drop_path)
     self.pos_emb = pos_emb(dim)
+    self.use_ctx = use_ctx
+    if self.use_ctx:
+      self.cross_norm = norm_layer(dim)
+      self.cross_attn = torch.nn.MultiheadAttention(
+          embed_dim=dim, num_heads=num_heads, dropout=attn_drop,
+          kdim=ctx_dim, vdim=ctx_dim, batch_first=True)
 
-  def forward(self, data: torch.Tensor, octree: OctreeT):
+  def forward(self, data: torch.Tensor, octree: OctreeT, context: torch.Tensor):
     pe = self.pos_emb(data, octree)
     data = pe + data
-    attn = self.attention(
-        self.norm1(data), octree)
+    attn = self.attention(self.norm1(data), octree)
     data = data + self.dropout(attn)
+    if self.use_ctx:
+      cross_attn = self.cross_norm(data)
+      cross_attn, _ = self.cross_attn(
+          query=cross_attn.unsqueeze(0), key=context, value=context)
+      cross_attn = cross_attn.squeeze(0)
+      data = data + cross_attn
     ffn = self.mlp(self.norm2(data))
     data = data + self.dropout(ffn)
     return data
@@ -351,21 +363,20 @@ class OctFormerBlock(torch.nn.Module):
 
 class OctFormerStage(torch.nn.Module):
 
-  def __init__(self, dim: int, num_heads: int, patch_size: int = 32,
-               dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
-               qk_scale: Optional[float] = None, attn_drop: float = 0.0,
-               proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
-               interval: int = 6, use_swin: bool = False, num_blocks: int = 2,
+  def __init__(self, dim: int, num_heads: int, num_blocks: int = 2, 
+               patch_size: int = 32, dilation: int = 0, 
+               mlp_ratio: float = 4.0, qkv_bias: bool = True, qk_scale: Optional[float] = None, 
+               attn_drop: float = 0.0, proj_drop: float = 0.0, drop_path: float = 0.0, 
+               nempty: bool = True, use_swin: bool = False, use_checkpoint: bool = True, 
+               use_ctx: bool = False, ctx_dim: int = None, ctx_interval: int = 2,
                pos_emb: torch.nn.Module = SinPosEmb,
                norm_layer: torch.nn.Module = LayerNorm,
                activation: torch.nn.Module = torch.nn.GELU,
-               use_checkpoint: bool = True,
-               octformer_block=OctFormerBlock, cond_interval=3, **kwargs):
+               octformer_block=OctFormerBlock, 
+               **kwargs):
     super().__init__()
     self.num_blocks = num_blocks
     self.use_checkpoint = use_checkpoint
-    self.interval = interval    # normalization interval
-    self.num_norms = (num_blocks - 1) // self.interval
 
     self.blocks = torch.nn.ModuleList([octformer_block(
         dim=dim, num_heads=num_heads, patch_size=patch_size,
@@ -373,58 +384,45 @@ class OctFormerStage(torch.nn.Module):
         mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
         use_swin=((i // 2) % 2 == 1) if use_swin else False,
+        use_ctx=(i % ctx_interval == 0) if use_ctx else False, ctx_dim=ctx_dim,
         drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
-        nempty=nempty, activation=activation, norm_layer=norm_layer) 
+        nempty=nempty, activation=activation, norm_layer=norm_layer)
         for i in range(num_blocks)])
-    # self.norms = torch.nn.ModuleList([
-    #         torch.nn.BatchNorm1d(dim) for _ in range(self.num_norms)])
-    
-    self.cond_interval = cond_interval  
 
-  def forward(self, data: torch.Tensor, octree: OctreeT, **kwargs):
+  def forward(self, data: torch.Tensor, octree: OctreeT, context: torch.Tensor):
     for i in range(self.num_blocks):
       if self.use_checkpoint and self.training:
-        data = checkpoint(self.blocks[i], data, octree, use_reentrant=False)
+        data = checkpoint(self.blocks[i], data, octree, context, use_reentrant=False)
       else:
-        data = self.blocks[i](data, octree)
-      
-      if i % self.cond_interval == 0:
-        if 'cond' in kwargs and 'cond_enc' in kwargs:
-          cond = kwargs['cond']
-          cond_enc = kwargs['cond_enc']
-          if cond is not None and cond_enc is not None:
-            data = cond_enc(data, cond)
+        data = self.blocks[i](data, octree, context)
     return data
 
 
 class OctFormer(torch.nn.Module):
 
   def __init__(self,
-               channels: int = 192,
-               num_blocks: int = 16,
-               num_heads: int = 16,
-               patch_size: int = 26, dilation: int = 4,
+               channels: int = 192, num_blocks: int = 16, num_heads: int = 16,
+               patch_size: int = 1024, dilation: int = 16,
                drop_path: float = 0.5, attn_drop: float = 0.1, proj_drop: float = 0.1,
+               nempty: bool = False, use_checkpoint: bool = True, use_swin: bool = False, 
+               use_ctx: bool = False, ctx_dim: int = None, ctx_interval: int = 2,
                pos_emb: torch.nn.Module = SinPosEmb,
                norm_layer: torch.nn.Module = LayerNorm,
-               nempty: bool = False, use_checkpoint: bool = True,
-               use_swin: bool = False, use_flex: bool = True, 
-               cond_interval=3, **kwargs):
+               **kwargs):
     super().__init__()
     self.patch_size = patch_size
     self.dilation = dilation
     self.nempty = nempty
     self.use_swin = use_swin
-    self.use_flex = use_flex
 
     self.layers = OctFormerStage(
         dim=channels, num_heads=num_heads, patch_size=patch_size,
         # drop_path=torch.linspace(0, drop_path, num_blocks).tolist(),
         dilation=dilation, nempty=nempty, num_blocks=num_blocks,
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
-        norm_layer=norm_layer, use_checkpoint=use_checkpoint, 
-        use_swin=use_swin, cond_interval=cond_interval)
+        norm_layer=norm_layer, use_checkpoint=use_checkpoint,
+        use_swin=use_swin, use_ctx=use_ctx, ctx_dim=ctx_dim, ctx_interval=ctx_interval)
 
-  def forward(self, data: torch.Tensor, octree: OctreeT, **kwargs):
-    data = self.layers(data, octree, **kwargs)
+  def forward(self, data: torch.Tensor, octree: OctreeT, context: torch.Tensor = None):
+    data = self.layers(data, octree, context)
     return data

@@ -46,9 +46,6 @@ DATA:
     # data loading
     location: &location data/ShapeNet/dataset_new
     filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
-    load_sketch: &load_sketch True
-    load_image: &load_image False
-    image_location: &image_location data/ShapeNet/sketch_256
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
     batch_size: 1
@@ -73,9 +70,6 @@ DATA:
     location: *location
     filelist: data/ShapeNet/filelist/test_airplane.txt
     batch_size: 1
-    load_sketch: *load_sketch
-    load_image: *load_image
-    image_location: *image_location
     load_pointcloud: *load_pointcloud
     load_sdf: *load_sdf
     shuffle: False
@@ -106,19 +100,20 @@ MODEL:
     vq_size: 128
     patch_size: 2048
     dilation: 2
+    buffer_size: 64
     drop_rate: 0.1
     pos_emb_type: SinPosEmb
     norm_type: LayerNorm
     use_checkpoint: True
     use_swin: True
     random_flip: 0.1
-    num_vq_blocks: 2
     mask_ratio_min: 0.5
     remask_stage: 0.7
     start_temperature: [1.0, 1.2, 0.5, 0.5]
     num_iters: [64, 128, 128, 256]
     condition_type: None
-    condition_policy: cross_attn
+    condition_policy: concat
+    context_dim: 512
   
 
 LOSS:

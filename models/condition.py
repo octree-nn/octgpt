@@ -66,36 +66,3 @@ class ImageEncoder(nn.Module):
       c_image = c_image[:, :-1]
       c_mm.append(c_image)
     return c_mm
-
-
-class ConditionCrossAttn(nn.Module):
-  def __init__(self,
-               num_embed: int,
-               num_heads: int,
-               dropout: float,
-               context_dim: int,
-               **kwargs):
-    super().__init__()
-    self.cond_ln = nn.LayerNorm(context_dim)
-
-    self.cond_prelen = nn.LayerNorm(num_embed)
-    self.cross_attn = nn.MultiheadAttention(
-        embed_dim=num_embed,
-        num_heads=num_heads,
-        dropout=dropout,
-        kdim=context_dim,
-        vdim=context_dim,
-        batch_first=True
-    )
-    self.cond_postlen = nn.LayerNorm(num_embed)
-
-  def forward(self, x, cond):
-    cond = self.cond_ln(cond)
-    x = self.cond_prelen(x)
-    x = x.unsqueeze(0)
-    attn_out, _ = self.cross_attn(
-        query=x, key=cond, value=cond)
-    x = x + attn_out
-    x = x.squeeze(0)
-    x = self.cond_postlen(x)
-    return x
