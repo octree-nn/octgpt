@@ -112,11 +112,7 @@ MODEL:
     start_temperature: [1.0, 1.2, 0.5, 0.5]
     num_iters: [64, 128, 128, 256]
     condition_type: None
+    condition_encoder: vit
     condition_policy: concat
     context_dim: 512
-  
 
-LOSS:
-  name: shapenet_vae_loss
-  loss_type: sdf_reg_loss
-  vq_weight: 0.1

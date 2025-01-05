@@ -41,10 +41,10 @@ class OctarSolver(Solver):
     utils.set_requires_grad(vqvae, False)
 
     if self.condition_type == "image":
-      self.img_enc = ImageEncoder("vit")
-      self.img_enc.cuda(device=self.device)
-      self.img_enc.eval()
-      utils.set_requires_grad(self.img_enc, False)
+      self.cond_enc = ImageEncoder(flags.GPT.condition_encoder)
+      self.cond_enc.cuda(device=self.device)
+      self.cond_enc.eval()
+      utils.set_requires_grad(self.cond_enc, False)
 
     # load the pretrained vqvae
     checkpoint = torch.load(flags.vqvae_ckpt, weights_only=True, map_location="cuda")
@@ -76,7 +76,7 @@ class OctarSolver(Solver):
       batch['condition'] = torch.tensor(label, device=self.device)
     elif self.condition_type == "image":
       images = batch['image'].to(device=self.device)
-      cond = self.img_enc(images)
+      cond = self.cond_enc(images)
       cond = torch.cat(cond, dim=1) # (B, 49, 512) for resnet
                                     # (B, 196, 768) for vit
       batch['condition'] = cond

@@ -37,14 +37,18 @@ class VAESolver(Solver):
       output['accu_%d' % d] = logits[d].argmax(1).eq(label_gt).float().mean()
 
     # regression loss
-    wg, ws, wm = 1.0, 200.0, 1.0
+    wg, ws, wm, wo = 1.0, 200.0, 1.0, 0.1
     flags = self.FLAGS.LOSS
     mpus = model_out['mpus']
     for d in mpus:
       sdf = mpus[d]
+      on_surf = batch['sdf'].abs() != 1.0
+      off_surf = ~on_surf
       grad = ognn.loss.compute_gradient(sdf, batch['pos'])[:, :3]
-      grad_loss = (grad - batch['grad']).pow(2).mean() * (wg * wm)
-      sdf_loss = (sdf - batch['sdf']).pow(2).mean() * (ws * wm)
+      grad_loss = (grad[on_surf] - batch['grad'][on_surf]).pow(2).mean() * (wg * wm)
+      sdf_loss = (sdf[on_surf] - batch['sdf'][on_surf]).pow(2).mean() * (ws * wm)
+      off_loss = grad[off_surf].pow(2).mean() * (ws * wo)
+      output['off_loss_%d' % d] = off_loss
       output['grad_loss_%d' % d] = grad_loss
       output['sdf_loss_%d' % d] = sdf_loss
 
@@ -79,6 +83,13 @@ class VAESolver(Solver):
     # Test the model every 5 epochs
     if epoch % 5 == 0:
       super().test_epoch(epoch)
+
+    # Generate one mesh for eval
+    if self.is_master:
+      batch = next(self.test_iter)
+      filename = batch['filename'][0]
+      batch['filename'][0] = os.path.join("results", f"{epoch}/{filename}")
+      self.eval_step(batch)
 
   def eval_step(self, batch):
     # forward the model
