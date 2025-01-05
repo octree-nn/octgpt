@@ -360,7 +360,7 @@ class OctFormerStage(torch.nn.Module):
                norm_layer: torch.nn.Module = LayerNorm,
                activation: torch.nn.Module = torch.nn.GELU,
                use_checkpoint: bool = True,
-               octformer_block=OctFormerBlock, **kwargs):
+               octformer_block=OctFormerBlock, cond_interval=3, **kwargs):
     super().__init__()
     self.num_blocks = num_blocks
     self.use_checkpoint = use_checkpoint
@@ -378,13 +378,22 @@ class OctFormerStage(torch.nn.Module):
         for i in range(num_blocks)])
     # self.norms = torch.nn.ModuleList([
     #         torch.nn.BatchNorm1d(dim) for _ in range(self.num_norms)])
+    
+    self.cond_interval = cond_interval  
 
-  def forward(self, data: torch.Tensor, octree: OctreeT):
+  def forward(self, data: torch.Tensor, octree: OctreeT, **kwargs):
     for i in range(self.num_blocks):
       if self.use_checkpoint and self.training:
         data = checkpoint(self.blocks[i], data, octree, use_reentrant=False)
       else:
         data = self.blocks[i](data, octree)
+      
+      if i % self.cond_interval == 0:
+        if 'cond' in kwargs and 'cond_enc' in kwargs:
+          cond = kwargs['cond']
+          cond_enc = kwargs['cond_enc']
+          if cond is not None and cond_enc is not None:
+            data = cond_enc(data, cond)
     return data
 
 
@@ -399,7 +408,8 @@ class OctFormer(torch.nn.Module):
                pos_emb: torch.nn.Module = SinPosEmb,
                norm_layer: torch.nn.Module = LayerNorm,
                nempty: bool = False, use_checkpoint: bool = True,
-               use_swin: bool = False, use_flex: bool = True, **kwargs):
+               use_swin: bool = False, use_flex: bool = True, 
+               cond_interval=3, **kwargs):
     super().__init__()
     self.patch_size = patch_size
     self.dilation = dilation
@@ -412,9 +422,9 @@ class OctFormer(torch.nn.Module):
         # drop_path=torch.linspace(0, drop_path, num_blocks).tolist(),
         dilation=dilation, nempty=nempty, num_blocks=num_blocks,
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
-        norm_layer=norm_layer,
-        use_checkpoint=use_checkpoint, use_swin=use_swin)
+        norm_layer=norm_layer, use_checkpoint=use_checkpoint, 
+        use_swin=use_swin, cond_interval=cond_interval)
 
-  def forward(self, data: torch.Tensor, octree: OctreeT):
-    data = self.layers(data, octree)
+  def forward(self, data: torch.Tensor, octree: OctreeT, **kwargs):
+    data = self.layers(data, octree, **kwargs)
     return data

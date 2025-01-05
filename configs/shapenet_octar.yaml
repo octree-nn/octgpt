@@ -46,6 +46,9 @@ DATA:
     # data loading
     location: &location data/ShapeNet/dataset_new
     filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
+    load_sketch: &load_sketch True
+    load_image: &load_image False
+    image_location: &image_location data/ShapeNet/sketch_256
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
     batch_size: 1
@@ -70,6 +73,9 @@ DATA:
     location: *location
     filelist: data/ShapeNet/filelist/test_airplane.txt
     batch_size: 1
+    load_sketch: *load_sketch
+    load_image: *load_image
+    image_location: *image_location
     load_pointcloud: *load_pointcloud
     load_sdf: *load_sdf
     shuffle: False
@@ -112,6 +118,7 @@ MODEL:
     start_temperature: [1.0, 1.2, 0.5, 0.5]
     num_iters: [64, 128, 128, 256]
     condition_type: None
+    condition_policy: cross_attn
   
 
 LOSS:

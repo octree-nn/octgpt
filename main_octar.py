@@ -9,10 +9,12 @@ from utils import utils, builder
 from utils.expand_ckpt import expand_checkpoint
 from utils.distributed import get_rank
 from models.mar import MAR, MAREncoderDecoder
+from models.condition import ImageEncoder
 from datasets import get_shapenet_dataset
 from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num
 from tqdm import tqdm
 import copy
+import cv2
 
 
 class OctarSolver(Solver):
@@ -37,6 +39,12 @@ class OctarSolver(Solver):
     vqvae.cuda(device=self.device)
     utils.set_requires_grad(model, True)
     utils.set_requires_grad(vqvae, False)
+
+    if self.condition_type == "image":
+      self.img_enc = ImageEncoder("vit")
+      self.img_enc.cuda(device=self.device)
+      self.img_enc.eval()
+      utils.set_requires_grad(self.img_enc, False)
 
     # load the pretrained vqvae
     checkpoint = torch.load(flags.vqvae_ckpt, weights_only=True, map_location="cuda")
@@ -66,6 +74,12 @@ class OctarSolver(Solver):
       label = [snc_synth_id_to_label_5[filename.split("/")[0]]
                for filename in batch['filename']]
       batch['condition'] = torch.tensor(label, device=self.device)
+    elif self.condition_type == "image":
+      images = batch['image'].to(device=self.device)
+      cond = self.img_enc(images)
+      cond = torch.cat(cond, dim=1) # (B, 49, 512) for resnet
+                                    # (B, 196, 768) for vit
+      batch['condition'] = cond
     else:
       raise NotImplementedError("Condition type not implemented")
 
@@ -122,7 +136,7 @@ class OctarSolver(Solver):
       self.generate_step(index)
       # self.generate_vq_step(index)
 
-  def export_results(self, octree_out, index, vq_code=None):
+  def export_results(self, octree_out, index, vq_code=None, image=None):
     # export the octree
     for d in range(self.full_depth + 1, self.depth_stop + 1):
       utils.export_octree(octree_out, d, os.path.join(
@@ -149,6 +163,12 @@ class OctarSolver(Solver):
         bbmax=self.FLAGS.SOLVER.sdf_scale,
         mesh_scale=self.FLAGS.DATA.test.points_scale,
         save_sdf=self.FLAGS.SOLVER.save_sdf)
+    # Save the image
+    if image is not None:
+      image = image[0][:3].transpose(1, 2, 0) * 255
+      image = image.astype('uint8')
+      image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+      cv2.imwrite(os.path.join(self.logdir, f"results/eval/{index}.png"), image)
 
   @torch.no_grad()
   def generate_step(self, index):
@@ -163,7 +183,7 @@ class OctarSolver(Solver):
           depth_low=self.full_depth, depth_high=self.depth_stop,
           vqvae=self.vqvae_module, condition=batch['condition'])
 
-    self.export_results(octree_out, index, vq_code)
+    self.export_results(octree_out, index, vq_code, batch['image'].cpu().numpy() if 'image' in batch else None)
 
   @torch.no_grad()
   def generate_vq_step(self, index):
