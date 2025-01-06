@@ -83,7 +83,7 @@ class MAR(nn.Module):
     self.class_emb = nn.Embedding(num_classes, num_embed)
     self.vq_proj = nn.Linear(self.num_vq_embed, num_embed)
 
-    if condition_type in ["image"]:
+    if condition_type in ["image", "text"]:
       self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
       self.ln_cond = eval(self.norm_type)(context_dim)
       self.cond_proj = nn.Linear(context_dim, num_embed)
@@ -138,7 +138,7 @@ class MAR(nn.Module):
     if self.condition_type in ['None', 'category']:
       batch_id = get_batch_id(octree, depth_list)
       mask_tokens = cond[batch_id]
-    elif self.condition_type == 'image':
+    elif self.condition_type in ['image', 'text']:
       mask_tokens = self.mask_token.repeat(x.shape[0], 1)
     x = torch.where(mask.bool().unsqueeze(1), mask_tokens, x)
     return x
@@ -146,12 +146,14 @@ class MAR(nn.Module):
   def add_buffer(self, x, mask, cond):
     batch_size = cond.shape[0]
     # Add condition to the input
-    if len(cond.shape) == 2:  # For None, category, CLIP
+    if len(cond.shape) == 2:  # For None, category
       buffer = cond.reshape(batch_size, 1, -1)
       buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
-    elif len(cond.shape) == 3:  # For ViT, DINOv2
-      assert self.buffer_size == cond.shape[1]
+    elif len(cond.shape) == 3:  # For ViT, DINOv2, CLIP
       buffer = self.cond_proj(self.ln_cond(cond))
+      if buffer.shape[1] < self.buffer_size:
+        buffer = torch.cat([
+            buffer, torch.zeros(batch_size, self.buffer_size - buffer.shape[1], self.num_embed, device=x.device)], dim=1)
       buffer = buffer.reshape(-1, self.num_embed)
 
     mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
@@ -166,21 +168,19 @@ class MAR(nn.Module):
     return x
 
   def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split, cond=None):
+    batch_size = octree.batch_size
     depth_list = list(range(depth_low, depth_high + 1))
-    if self.condition_type in ["None", "category"]:
-      buffer = cond.reshape(octree.batch_size, 1, -1)
-      buffer = buffer.repeat(1, self.buffer_size, 1).reshape(-1, self.num_embed)
-      mask_buffer = torch.zeros(buffer.shape[0], device=x.device).bool()
-      x = torch.cat([buffer, x], dim=0)
-      mask = torch.cat([mask_buffer, mask], dim=0)
+    x, mask = self.add_buffer(x, mask, cond)
+    if self.condition_type in ["image", "text"] and self.condition_policy == "cross_attn":
+      context = cond
+    else:
       context = None
-    elif self.condition_type == "image":
-      pass
 
     octreeT = OctreeT(
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
-        depth_list=depth_list, use_swin=self.use_swin, buffer_size=self.buffer_size)
-    x = self.forward_blocks(x, octreeT, self.blocks, context)
+        depth_list=depth_list, use_swin=self.use_swin,
+        data_mask=mask, buffer_size=self.buffer_size)
+    x_enc = self.forward_blocks(x_enc, octreeT, self.blocks, context)
     x = self.ln_x(x)
     return x
 
@@ -192,10 +192,11 @@ class MAR(nn.Module):
       cond = self.class_emb(condition)  # 1 x C
     elif self.condition_type == "category":
       cond = self.class_emb(condition)
-    elif self.condition_type == "image":
+    elif self.condition_type in ['image', 'text']:
       cond = condition
-      cfg_drop = torch.rand(batch_size) < self.cfg_prob
-      cond[cfg_drop] = 0.0 # neg cond is zero
+    # classifier free guidance
+    cfg_drop = torch.rand(batch_size) < self.cfg_prob
+    cond[cfg_drop] = 0.0
 
     targets_split = split.clone().detach()
     split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
@@ -290,7 +291,7 @@ class MAR(nn.Module):
       cond = self.class_emb(condition)  # 1 x C
     elif self.condition_type == "category":
       cond = self.class_emb(condition)
-    elif self.condition_type == 'image':
+    elif self.condition_type in ['image', 'text']:
       cond = condition
     if cfg_scale:
       neg_cond = torch.zeros_like(cond)
@@ -330,7 +331,7 @@ class MAR(nn.Module):
                                mask=torch.cat([mask, mask_d]), cond=cond)
         if cfg_scale:
           x_neg = self.forward_model(x, octree, depth_low, d, nnum_split=nnum_split,
-                               mask=torch.cat([mask, mask_d]), cond=neg_cond)
+                                     mask=torch.cat([mask, mask_d]), cond=neg_cond)
           x = x_neg + (x - x_neg) * cfg_scale
         x = x[-nnum_d:, :]
 
@@ -399,8 +400,8 @@ class MAREncoderDecoder(MAR):
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint, 
-        use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
+        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
+        use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.encoder_ln = eval(self.norm_type)(self.num_embed)
 
@@ -408,8 +409,8 @@ class MAREncoderDecoder(MAR):
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint, 
-        use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
+        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
+        use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.decoder_ln = eval(self.norm_type)(self.num_embed)
 
@@ -417,7 +418,7 @@ class MAREncoderDecoder(MAR):
     batch_size = octree.batch_size
     depth_list = list(range(depth_low, depth_high + 1))
     x, mask = self.add_buffer(x, mask, cond)
-    if self.condition_type in ["image"] and self.condition_policy == "cross_attn":
+    if self.condition_type in ["image", "text"] and self.condition_policy == "cross_attn":
       context = cond
     else:
       context = None

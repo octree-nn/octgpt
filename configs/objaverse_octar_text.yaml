@@ -1,0 +1,25 @@
+BASE:
+  - configs/shapenet_octar.yaml
+
+DATA:
+  train:
+    location: &location data/Objaverse/objaverse_5w
+    filelist: &filelist data/Objaverse/filelist/objaverse_5w_train.txt
+    load_text: &load_text True
+    text_location: &text_location data/Objaverse/filelist/Cap3D_automated_Objaverse_highquality.csv
+
+  test:
+    location: *location
+    filelist: data/Objaverse/filelist/objaverse_5w_val.txt
+    load_text: *load_text
+    text_location: *text_location
+
+    
+MODEL:
+  GPT:
+    buffer_size: 77
+    condition_type: text
+    condition_encoder: clip
+    condition_policy: cross_attn
+    context_dim: 768
+    cfg_prob: 0.0

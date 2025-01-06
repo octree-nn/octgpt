@@ -5,10 +5,11 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 import numpy as np
 from PIL import Image
-
+import pandas as pd
 from thsolver import Dataset
 from ocnn.octree import Octree, Points
 from .sketch_utils import Projection_List, Projection_List_zero
+
 
 class TransformShape:
 
@@ -100,7 +101,7 @@ class TransformShape:
     normals = torch.from_numpy(normals[rand_idx]).float()
     sdf = torch.zeros(self.surface_sample_num)
     return {'pos': points, 'sdf': sdf, 'grad': normals}
-  
+
   def sample_off_surface(self, points):
     '''Randomly sample points in the 3D space.'''
     off_surface_sample_num = self.off_surface_sample_num
@@ -121,7 +122,6 @@ class TransformShape:
     output = {'pos': pos, 'sdf': sdf, 'grad': grad}
 
     return output
-
 
   def rand_drop(self, sample):
     r'''Randomly drop some points to make the dataset more diverse
@@ -160,11 +160,12 @@ class TransformShape:
       surface = self.sample_surface(sample['point_cloud'])
       off_surface = self.sample_off_surface(surface['pos'])
       for key in samples.keys():
-        samples[key] = torch.cat([samples[key], surface[key], off_surface[key]], dim=0)
+        samples[key] = torch.cat(
+            [samples[key], surface[key], off_surface[key]], dim=0)
 
       output.update(samples)
-    
-    ## Sketch Condition
+
+    # Sketch Condition
     if self.flags.get('load_sketch'):
       output['image'] = sample['image']
       output['projection_matrix'] = sample['projection_matrix'].unsqueeze(0)
@@ -172,6 +173,9 @@ class TransformShape:
     if self.flags.get('load_image'):
       output['image'] = sample['image']
     
+    if self.flags.get('load_text'):
+      output['text'] = sample['text']
+
     return output
 
 
@@ -179,11 +183,17 @@ class ReadFile:
 
   def __init__(self, flags):
     self.flags = flags
+    if flags.get("load_sketch"):
+      self.load_sketch = ReadSketch(flags)
+    if flags.get("load_image"):
+      self.load_image = ReadImage(flags)
+    if flags.get("load_text"):
+      self.load_text = ReadText(flags)
 
-  def __call__(self, filename): #, uid=None):
+  def __call__(self, filename):  # , uid=None):
     # load the input point cloud
     output = {}
-    
+
     uid = '/'.join(filename.split('/')[-2:])
     # print(uid)
     if self.flags.get('load_pointcloud'):
@@ -200,21 +210,23 @@ class ReadFile:
       raw = np.load(filename_sdf)
       sdf = {'points': raw['points'], 'grad': raw['grad'], 'sdf': raw['sdf']}
       output['sdf'] = sdf
-    
+
     # Load the sketch image
     if self.flags.get('load_sketch'):
-      read_image = ReadSketch(self.flags)
-      img, pm, sketch_view = read_image(uid)
+      img, pm, sketch_view = self.load_sketch(uid)
       output['uid'] = uid
       output['image'] = img
       output['projection_matrix'] = pm
       output['sketch_view'] = sketch_view
-    
+
     if self.flags.get('load_image'):
-      read_image = ReadImage(self.flags)
-      img = read_image(uid)
+      img = self.load_image(uid)
       output['uid'] = uid
       output['image'] = img
+    
+    if self.flags.get('load_text'):
+      text = self.load_text(uid)
+      output['text'] = text
 
     return output
 
@@ -223,17 +235,20 @@ class ReadImage:
   def __init__(self, flags):
     self.flags = flags
     self.image_folder = flags.image_location
-  
+
   def load_image(self, uid):
     uid = uid.split('/')[-1]
-    img = Image.open(os.path.join(self.image_folder, f'{uid}_0.png')).convert('RGBA')
+    img = Image.open(os.path.join(self.image_folder,
+                     f'{uid}_0.png')).convert('RGBA')
     return img
-  
+
   def __call__(self, uid):
     return self.load_image(uid)
 
 
 SKETCH_PER_VIEW = 10
+
+
 class ReadSketch:
   def __init__(self, flags, elevation_zero: bool = False):
     self.flags = flags
@@ -243,19 +258,39 @@ class ReadSketch:
       self.projection_list = Projection_List_zero
     else:
       self.projection_list = Projection_List
-  
+
   def random_load_image(self, uid):
     sketch_view_index = np.random.randint(0, 5 * SKETCH_PER_VIEW)
     img = Image.open(os.path.join(
-      self.image_folder, uid, 
-      f'edge_{sketch_view_index // SKETCH_PER_VIEW}_{sketch_view_index % SKETCH_PER_VIEW}.png')).convert('RGB')
-    
+        self.image_folder, uid,
+        f'edge_{sketch_view_index // SKETCH_PER_VIEW}_{sketch_view_index % SKETCH_PER_VIEW}.png')).convert('RGB')
+
     pm = self.projection_list[sketch_view_index // SKETCH_PER_VIEW]
     projection_matrix = torch.from_numpy(np.expand_dims(pm, axis=0))
     return img, projection_matrix, sketch_view_index // SKETCH_PER_VIEW
 
   def __call__(self, uid):
     return self.random_load_image(uid)
+
+
+class ReadText:
+  def __init__(self, flags):
+    self.flags = flags
+    self.read_objaverse()
+
+  def read_objaverse(self):
+    text_csv = pd.read_csv(self.flags.text_location,
+                           header=None, names=["uid", "text"])
+    self.text_dict = dict(zip(text_csv['uid'], text_csv['text']))
+
+  def __call__(self, uid):
+    uid = uid.split('/')[-1]
+    if uid in self.text_dict:
+      text = self.text_dict[uid]
+      return text
+    else:
+      return "A 3D model."
+
 
 def collate_func(batch):
   output = ocnn.dataset.CollateBatch(merge_points=False)(batch)

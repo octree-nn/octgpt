@@ -9,7 +9,7 @@ from utils import utils, builder
 from utils.expand_ckpt import expand_checkpoint
 from utils.distributed import get_rank
 from models.mar import MAR, MAREncoderDecoder
-from models.condition import ImageEncoder
+from models.condition import ImageEncoder, TextEncoder
 from datasets import get_shapenet_dataset
 from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num
 from tqdm import tqdm
@@ -42,6 +42,12 @@ class OctarSolver(Solver):
 
     if self.condition_type == "image":
       self.cond_enc = ImageEncoder(flags.GPT.condition_encoder)
+    elif self.condition_type == "text":
+      self.cond_enc = TextEncoder(flags.GPT.condition_encoder)
+    else:
+      self.cond_enc = None
+    
+    if self.cond_enc:
       self.cond_enc.cuda(device=self.device)
       self.cond_enc.eval()
       utils.set_requires_grad(self.cond_enc, False)
@@ -77,6 +83,10 @@ class OctarSolver(Solver):
     elif self.condition_type == "image":
       images = batch['image']
       cond = self.cond_enc(images, device=self.device)
+      batch['condition'] = cond
+    elif self.condition_type == "text":
+      text = batch['text']
+      cond = self.cond_enc(text, device=self.device)
       batch['condition'] = cond
     else:
       raise NotImplementedError("Condition type not implemented")
