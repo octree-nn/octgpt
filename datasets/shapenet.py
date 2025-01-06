@@ -17,7 +17,10 @@ class TransformShape:
 
     self.volume_sample_num = flags.volume_sample_num
     self.surface_sample_num = flags.surface_sample_num
-    self.off_surface_sample_num = flags.off_surface_sample_num
+    if self.flags.get('off_surface_sample_num'):
+      self.off_surface_sample_num = flags.off_surface_sample_num
+    else:
+      self.off_surface_sample_num = 0
     self.points_scale = flags.points_scale  # the points are in [-0.5, 0.5]
     self.noise_std = 0.005
     self.tsdf = flags.tsdf         # truncation of SDF
@@ -245,7 +248,7 @@ class ReadSketch:
     sketch_view_index = np.random.randint(0, 5 * SKETCH_PER_VIEW)
     img = Image.open(os.path.join(
       self.image_folder, uid, 
-      f'edge_{sketch_view_index // SKETCH_PER_VIEW}_{sketch_view_index % SKETCH_PER_VIEW}.png')).convert('RGBA')
+      f'edge_{sketch_view_index // SKETCH_PER_VIEW}_{sketch_view_index % SKETCH_PER_VIEW}.png')).convert('RGB')
     
     pm = self.projection_list[sketch_view_index // SKETCH_PER_VIEW]
     projection_matrix = torch.from_numpy(np.expand_dims(pm, axis=0))

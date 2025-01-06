@@ -83,7 +83,7 @@ class MAR(nn.Module):
 
     if condition_type in ["image"]:
       self.mask_token = nn.Parameter(torch.zeros(1, num_embed))
-      self.ln_cond = eval(self.norm_type)(num_embed)
+      self.ln_cond = eval(self.norm_type)(context_dim)
       self.cond_proj = nn.Linear(context_dim, num_embed)
 
     # Initialize the blocks

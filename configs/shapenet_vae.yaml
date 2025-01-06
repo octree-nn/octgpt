@@ -31,7 +31,7 @@ DATA:
     # sdf & color samples
     volume_sample_num: &volume_sample_num 10000
     surface_sample_num: &surface_sample_num 10000
-    off_surface_sample_num: &off_surface_sample_num 2000
+    off_surface_sample_num: &off_surface_sample_num 5000
     max_points: &max_points 350000
     tsdf: &tsdf 0.05
 

@@ -75,10 +75,8 @@ class OctarSolver(Solver):
                for filename in batch['filename']]
       batch['condition'] = torch.tensor(label, device=self.device)
     elif self.condition_type == "image":
-      images = batch['image'].to(device=self.device)
-      cond = self.cond_enc(images)
-      cond = torch.cat(cond, dim=1) # (B, 49, 512) for resnet
-                                    # (B, 196, 768) for vit
+      images = batch['image']
+      cond = self.cond_enc(images, device=self.device)
       batch['condition'] = cond
     else:
       raise NotImplementedError("Condition type not implemented")

@@ -14,7 +14,8 @@ DATA:
     
 MODEL:
   GPT:
-    buffer_size: 196
+    buffer_size: 257
     condition_type: image
+    condition_encoder: dinov2
     condition_policy: cross_attn
-    context_dim: 768
+    context_dim: 1024
