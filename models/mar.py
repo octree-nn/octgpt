@@ -39,11 +39,12 @@ class MAR(nn.Module):
                mask_ratio_min=0.7,
                start_temperature=1.0,
                remask_stage=0.9,
+               num_iters=256,
                vqvae_config=None,
                condition_type="None",
                condition_policy="concat",
-               num_iters=256,
                context_dim=512,
+               cfg_prob=0.0,
                **kwargs):
     super(MAR, self).__init__()
     self.vqvae_config = vqvae_config
@@ -65,6 +66,7 @@ class MAR(nn.Module):
     self.condition_type = condition_type
     self.condition_policy = condition_policy
     self.context_dim = context_dim
+    self.cfg_prob = cfg_prob
     self.split_size = 2  # 0/1 indicates the split signals
     self.num_vq_embed = vqvae_config.embedding_channels
 
@@ -192,6 +194,8 @@ class MAR(nn.Module):
       cond = self.class_emb(condition)
     elif self.condition_type == "image":
       cond = condition
+      cfg_drop = torch.rand(batch_size) < self.cfg_prob
+      cond[cfg_drop] = 0.0 # neg cond is zero
 
     targets_split = split.clone().detach()
     split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
@@ -279,7 +283,7 @@ class MAR(nn.Module):
     return remask
 
   @torch.no_grad()
-  def generate(self, octree, depth_low, depth_high, token_embeddings=None, condition=None, vqvae=None):
+  def generate(self, octree, depth_low, depth_high, token_embeddings=None, condition=None, vqvae=None, cfg_scale=None):
     batch_size = octree.batch_size
     if self.condition_type == "None":
       condition = torch.zeros(batch_size).long().to(octree.device)
@@ -288,6 +292,8 @@ class MAR(nn.Module):
       cond = self.class_emb(condition)
     elif self.condition_type == 'image':
       cond = condition
+    if cfg_scale:
+      neg_cond = torch.zeros_like(cond)
 
     if token_embeddings is None:
       token_embeddings = torch.empty((0, self.num_embed), device=octree.device)
@@ -322,6 +328,10 @@ class MAR(nn.Module):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
         x = self.forward_model(x, octree, depth_low, d, nnum_split=nnum_split,
                                mask=torch.cat([mask, mask_d]), cond=cond)
+        if cfg_scale:
+          x_neg = self.forward_model(x, octree, depth_low, d, nnum_split=nnum_split,
+                               mask=torch.cat([mask, mask_d]), cond=neg_cond)
+          x = x_neg + (x - x_neg) * cfg_scale
         x = x[-nnum_d:, :]
 
         # mask ratio for the next round, following MaskGIT and MAGE.

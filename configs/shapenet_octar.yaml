@@ -118,4 +118,5 @@ MODEL:
     condition_encoder: vit
     condition_policy: concat
     context_dim: 512
+    cfg_prob: 0.0
 

@@ -163,10 +163,8 @@ class OctarSolver(Solver):
         save_sdf=self.FLAGS.SOLVER.save_sdf)
     # Save the image
     if image is not None:
-      image = image[0][:3].transpose(1, 2, 0) * 255
-      image = image.astype('uint8')
-      image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-      cv2.imwrite(os.path.join(self.logdir, f"results/eval/{index}.png"), image)
+      os.makedirs(os.path.join(self.logdir, "results/images"), exist_ok=True)
+      image[0].save(os.path.join(self.logdir, f"results/images/{index}.png"))
 
   @torch.no_grad()
   def generate_step(self, index):
@@ -181,7 +179,7 @@ class OctarSolver(Solver):
           depth_low=self.full_depth, depth_high=self.depth_stop,
           vqvae=self.vqvae_module, condition=batch['condition'])
 
-    self.export_results(octree_out, index, vq_code, batch['image'].cpu().numpy() if 'image' in batch else None)
+    self.export_results(octree_out, index, vq_code, batch['image'] if 'image' in batch else None)
 
   @torch.no_grad()
   def generate_vq_step(self, index):
