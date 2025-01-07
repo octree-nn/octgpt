@@ -256,11 +256,10 @@ class AbsPosEmb(torch.nn.Module):
     index_x = torch.meshgrid(pos_x.long(), column_index)
     index_y = torch.meshgrid(pos_y.long(), column_index + 1)
     index_z = torch.meshgrid(pos_z.long(), column_index + 2)
-    emb_x = self.absolute_emb[index_x]
-    emb_y = self.absolute_emb[index_y]
-    emb_z = self.absolute_emb[index_z]
-
-    emb = torch.cat([emb_x, emb_y, emb_z], dim=1)
+    emb = torch.zeros((pos_x.shape[0], channels * 3), device=device)
+    emb[:, column_index] = self.absolute_emb[index_x]
+    emb[:, column_index + 1] = self.absolute_emb[index_y]
+    emb[:, column_index + 2] = self.absolute_emb[index_z]
     return emb[:, :self.num_embed]
 
   def forward(self, data: torch.Tensor, octree: Octree):
