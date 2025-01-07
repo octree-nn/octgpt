@@ -167,6 +167,7 @@ class OctarSolver(Solver):
         output['neural_mpu'],
         os.path.join(self.logdir, f"results/{index}.obj"),
         size=self.FLAGS.SOLVER.resolution,
+        level=0.002, clean=True,
         bbmin=-self.FLAGS.SOLVER.sdf_scale,
         bbmax=self.FLAGS.SOLVER.sdf_scale,
         mesh_scale=self.FLAGS.DATA.test.points_scale,
