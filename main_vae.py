@@ -42,13 +42,13 @@ class VAESolver(Solver):
     mpus = model_out['mpus']
     for d in mpus:
       sdf = mpus[d]
-      on_surf = batch['sdf'].abs() != 1.0
-      off_surf = ~on_surf
+      # on_surf = batch['sdf'].abs() != 1.0
+      # off_surf = ~on_surf
       grad = ognn.loss.compute_gradient(sdf, batch['pos'])[:, :3]
-      grad_loss = (grad[on_surf] - batch['grad'][on_surf]).pow(2).mean() * (wg * wm)
-      sdf_loss = (sdf[on_surf] - batch['sdf'][on_surf]).pow(2).mean() * (ws * wm)
-      off_loss = grad[off_surf].pow(2).mean() * (ws * wo)
-      output['off_loss_%d' % d] = off_loss
+      grad_loss = (grad - batch['grad']).pow(2).mean() * (wg * wm)
+      sdf_loss = (sdf - batch['sdf']).pow(2).mean() * (ws * wm)
+      # off_loss = grad[off_surf].pow(2).mean() * (ws * wo)
+      # output['off_loss_%d' % d] = off_loss
       output['grad_loss_%d' % d] = grad_loss
       output['sdf_loss_%d' % d] = sdf_loss
 
@@ -105,7 +105,7 @@ class VAESolver(Solver):
     utils.create_mesh(
         output['neural_mpu'], filename, size=flags.resolution,
         bbmin=bbmin, bbmax=bbmax, mesh_scale=flags.points_scale,
-        save_sdf=flags.save_sdf)
+        save_sdf=flags.save_sdf, clean=True, level=0.002)
 
     # save the input point cloud
     filename = filename[:-4] + '.input.ply'
@@ -117,7 +117,7 @@ class VAESolver(Solver):
     filename = batch['filename'][0]
     pos = filename.rfind('.')
     if pos != -1: filename = filename[:pos]  # remove the suffix
-    filename = os.path.join(self.logdir, filename + '.obj')
+    filename = os.path.join(self.logdir, "results", filename + '.obj')
     folder = os.path.dirname(filename)
     if not os.path.exists(folder): os.makedirs(folder)
     return filename

@@ -18,10 +18,10 @@ class TransformShape:
 
     self.volume_sample_num = flags.volume_sample_num
     self.surface_sample_num = flags.surface_sample_num
-    if self.flags.get('off_surface_sample_num'):
-      self.off_surface_sample_num = flags.off_surface_sample_num
-    else:
-      self.off_surface_sample_num = 0
+    # if self.flags.get('off_surface_sample_num'):
+    #   self.off_surface_sample_num = flags.off_surface_sample_num
+    # else:
+    #   self.off_surface_sample_num = 0
     self.points_scale = flags.points_scale  # the points are in [-0.5, 0.5]
     self.noise_std = 0.005
     self.tsdf = flags.tsdf         # truncation of SDF
@@ -158,10 +158,10 @@ class TransformShape:
     if self.flags.get('load_sdf'):
       samples = self.sample_volume(sample['sdf'])
       surface = self.sample_surface(sample['point_cloud'])
-      off_surface = self.sample_off_surface(surface['pos'])
+      # off_surface = self.sample_off_surface(surface['pos'])
       for key in samples.keys():
         samples[key] = torch.cat(
-            [samples[key], surface[key], off_surface[key]], dim=0)
+            [samples[key], surface[key]], dim=0)
 
       output.update(samples)
 

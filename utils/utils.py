@@ -152,7 +152,7 @@ def marching_cubes(values, level=0, with_color=False):
 
 def create_mesh(model, filename, size=256, max_batch=64**3, level=0,
                 bbmin=-0.9, bbmax=0.9, mesh_scale=1.0, save_sdf=False,
-                with_color=False, **kwargs):
+                with_color=False, clean=False, **kwargs):
   os.makedirs(os.path.dirname(filename), exist_ok=True)
   channel = 1 if not with_color else 4
   values = calc_field_values(model, size, max_batch, bbmin, bbmax, channel)
@@ -164,6 +164,15 @@ def create_mesh(model, filename, size=256, max_batch=64**3, level=0,
 
   # save to ply and npy
   mesh = trimesh.Trimesh(vtx, faces, vertex_colors=colors)
+  if clean:
+    components = mesh.split(only_watertight=True)
+    # bbox = []
+    # for c in components:
+    #   bbmin = c.vertices.min(0)
+    #   bbmax = c.vertices.max(0)
+    #   bbox.append((bbmax - bbmin).max())
+    # max_component = np.argmax(bbox)
+    mesh = trimesh.util.concatenate(components)
   mesh.export(filename)
   if save_sdf:
     np.save(filename[:-4] + ".sdf.npy", values)
