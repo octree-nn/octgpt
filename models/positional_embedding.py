@@ -188,6 +188,7 @@ class SinPosEmb(torch.nn.Module):
         (pos_x.shape[0], channels * 3),
         device=device,
     )
+    # [xxx..., yyy..., zzz...]
     emb[:, : channels] = emb_x
     emb[:, channels: 2 * channels] = emb_y
     emb[:, 2 * channels:] = emb_z
@@ -235,9 +236,10 @@ class AbsPosEmb(torch.nn.Module):
     emb_y = self.get_emb(sin_inp_y)
     emb_z = self.get_emb(sin_inp_z)
     emb = torch.zeros((pos_x.shape[0], channels * 3))
-    emb[:, : channels] = emb_x
-    emb[:, channels: 2 * channels] = emb_y
-    emb[:, 2 * channels:] = emb_z
+    column_index = torch.arange(0, channels * 3, 3)
+    emb[:, column_index] = emb_x
+    emb[:, column_index + 1] = emb_y
+    emb[:, column_index + 2] = emb_z
 
     return emb[:, :self.num_embed]
 
@@ -249,9 +251,11 @@ class AbsPosEmb(torch.nn.Module):
     if channels % 2:
       channels += 1
 
-    index_x = torch.meshgrid(pos_x.long(), torch.arange(channels, device=device))
-    index_y = torch.meshgrid(pos_y.long(), torch.arange(channels, device=device))
-    index_z = torch.meshgrid(pos_z.long(), torch.arange(channels, device=device))
+    # [xyz, xyz, ..., xyz]
+    column_index = torch.arange(0, channels * 3, 3, device=device)
+    index_x = torch.meshgrid(pos_x.long(), column_index)
+    index_y = torch.meshgrid(pos_y.long(), column_index + 1)
+    index_z = torch.meshgrid(pos_z.long(), column_index + 2)
     emb_x = self.absolute_emb[index_x]
     emb_y = self.absolute_emb[index_y]
     emb_z = self.absolute_emb[index_z]

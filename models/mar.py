@@ -10,7 +10,7 @@ import torch.nn as nn
 from torch.nn import LayerNorm
 import torch.nn.functional as F
 from models.octformer import OctFormer, OctreeT
-from models.positional_embedding import SinPosEmb, RMSNorm
+from models.positional_embedding import SinPosEmb, AbsPosEmb, RMSNorm
 from models.vae import DiagonalGaussian
 from utils.utils import seq2octree, sample, depth2batch, batch2depth, \
     get_depth2batch_indices, get_batch_id, export_octree
