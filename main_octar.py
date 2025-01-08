@@ -144,7 +144,7 @@ class OctarSolver(Solver):
       self.generate_step(index)
       # self.generate_vq_step(index)
 
-  def export_results(self, octree_out, index, vq_code=None, image=None):
+  def export_results(self, octree_out, index, vq_code=None, image=None, text=None):
     # export the octree
     for d in range(self.full_depth + 1, self.depth_stop + 1):
       utils.export_octree(octree_out, d, os.path.join(
@@ -176,6 +176,11 @@ class OctarSolver(Solver):
     if image is not None:
       os.makedirs(os.path.join(self.logdir, "results/images"), exist_ok=True)
       image[0].save(os.path.join(self.logdir, f"results/images/{index}.png"))
+    # Save the text:
+    if text is not None:
+      os.makedirs(os.path.join(self.logdir, "results/text"), exist_ok=True)
+      with open(os.path.join(self.logdir, f"results/text/{index}.txt"), "a") as f:
+        f.write(text[0] + '\n')
 
   @torch.no_grad()
   def generate_step(self, index):
@@ -190,7 +195,10 @@ class OctarSolver(Solver):
           depth_low=self.full_depth, depth_high=self.depth_stop,
           vqvae=self.vqvae_module, condition=batch['condition'])
 
-    self.export_results(octree_out, index, vq_code, batch['image'] if 'image' in batch else None)
+    self.export_results(
+      octree_out, index, vq_code,
+      image=batch['image'] if 'image' in batch else None,
+      text=batch['text'] if 'text' in batch else None)
 
   @torch.no_grad()
   def generate_vq_step(self, index):
