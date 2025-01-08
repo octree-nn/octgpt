@@ -12,12 +12,15 @@ snc_synth_id_to_category_5 = {
 
 category_to_snc_synth_id = {v:k for (k,v) in snc_synth_id_to_category_5.items()}
 
-category = 'chair'
+category = 'airplane'
 cond = True
 synth_id = category_to_snc_synth_id[category]
 
-root_dir = "logs/chair/mar_bv32_ec_flip2_mask0.5"
-synthesis_path = f'{root_dir}/fid_images'
+root_dir = "logs/im_5/mar_bv32_ec_b24_p1024_d16"
+if cond:
+    synthesis_path = f'{root_dir}/fid_images_{category}'
+else:
+    synthesis_path = f'{root_dir}/fid_images'
 
 dataset_path = f'data/ShapeNet/fid_images/{category}'
 

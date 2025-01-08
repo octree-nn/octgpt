@@ -28,9 +28,13 @@ snc_category_to_synth_id_13 = {
 }
 
 cond = True
-root_dir = "logs/chair/mar_bv24_ec_flip2_mask0.3"
-fid_dir = f'{root_dir}/fid_images'
-mesh_dir = f'{root_dir}/results'
+root_dir = "logs/im_5/mar_bv32_ec_b24_p1024_d16"
+if cond:
+    fid_dir = f'{root_dir}/fid_images_{category}'
+    mesh_dir = f'{root_dir}/results_{category}'
+else:
+    fid_dir = f'{root_dir}/fid_images'
+    mesh_dir = f'{root_dir}/results'
 
 
 os.makedirs(fid_dir, exist_ok=True)
