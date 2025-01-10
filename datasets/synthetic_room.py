@@ -20,8 +20,8 @@ class TransformScene(TransformShape):
     super().__init__(flags)
 
     self.point_sample_num = 10000
-    self.volume_sample_num = 4096
-    self.surface_sample_num = 2048
+    self.volume_sample_num = 10000
+    self.surface_sample_num = 5000
     self.points_scale = 0.6  # the points are actually in [-0.55, 0.55]
     self.noise_std = 0.005
     self.pos_weight = 10
