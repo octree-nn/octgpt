@@ -7,7 +7,6 @@ from thsolver import Solver
 from ognn.octreed import OctreeD
 
 from utils import utils, builder
-from datasets import get_shapenet_dataset
 
 
 class VAESolver(Solver):
@@ -16,7 +15,7 @@ class VAESolver(Solver):
     return builder.build_vae_model(flags)
 
   def get_dataset(self, flags):
-    return get_shapenet_dataset(flags)
+    return builder.build_dataset(flags)
 
   def batch_to_cuda(self, batch):
     keys = ['octree', 'octree_in', 'octree_gt', 'pos', 'sdf',
@@ -25,6 +24,18 @@ class VAESolver(Solver):
       if key in batch:
         batch[key] = batch[key].cuda()
     batch['pos'].requires_grad_()
+
+  def compute_scene_loss(self, batch, model_out):
+    wo = [1.0] * 8 + [0.1] * 3  # lower weights for deep layers
+    output = ognn.loss.synthetic_room_loss(batch, model_out, wo=wo)
+    output['vae_loss'] = self.FLAGS.LOSS.vae_weight * model_out['vae_loss']
+    return output
+
+  def compute_shape_loss(self, batch, model_out):
+    wo = [1.0] * 8 + [0.1] * 3  # lower weights for deep layers
+    output = ognn.loss.shapenet_loss(batch, model_out, wo=wo)
+    output['vae_loss'] = self.FLAGS.LOSS.vae_weight * model_out['vae_loss']
+    return output
 
   def compute_loss(self, batch, model_out):
     # octree loss
@@ -37,24 +48,28 @@ class VAESolver(Solver):
       output['accu_%d' % d] = logits[d].argmax(1).eq(label_gt).float().mean()
 
     # regression loss
-    wg, ws, wm, wo = 1.0, 200.0, 1.0, 0.1
+    wg, ws, wm = 1.0, 200.0, 1.0
     flags = self.FLAGS.LOSS
     mpus = model_out['mpus']
     for d in mpus:
       sdf = mpus[d]
-      # on_surf = batch['sdf'].abs() != 1.0
-      # off_surf = ~on_surf
       grad = ognn.loss.compute_gradient(sdf, batch['pos'])[:, :3]
       grad_loss = (grad - batch['grad']).pow(2).mean() * (wg * wm)
       sdf_loss = (sdf - batch['sdf']).pow(2).mean() * (ws * wm)
-      # off_loss = grad[off_surf].pow(2).mean() * (ws * wo)
-      # output['off_loss_%d' % d] = off_loss
       output['grad_loss_%d' % d] = grad_loss
       output['sdf_loss_%d' % d] = sdf_loss
 
     # vae loss
     output['vae_loss'] = flags.vae_weight * model_out['vae_loss']
     return output
+
+  def compute_loss(self, batch, model_out):
+    if self.FLAGS.LOSS.name == 'shape':
+      return self.compute_shape_loss(batch, model_out)
+    elif self.FLAGS.LOSS.name == 'room':
+      return self.compute_scene_loss(batch, model_out)
+    else:
+      raise ValueError('Unsupported loss type')
 
   def model_forward(self, batch):
     self.batch_to_cuda(batch)

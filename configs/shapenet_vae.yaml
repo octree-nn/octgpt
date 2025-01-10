@@ -90,5 +90,5 @@ MODEL:
 
 
 LOSS:
-  name: shapenet_vae_loss
+  name: shape
   vae_weight: 1.0
