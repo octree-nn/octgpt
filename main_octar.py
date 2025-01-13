@@ -78,7 +78,7 @@ class OctarSolver(Solver):
       if key in batch:
         batch[key] = batch[key].cuda()
 
-    if self.condition_type == "None":
+    if self.condition_type == "none":
       batch['condition'] = None
     elif self.condition_type == "category":
       label = [snc_synth_id_to_label_5[filename.split("/")[0]]

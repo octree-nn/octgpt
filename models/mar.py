@@ -41,7 +41,7 @@ class MAR(nn.Module):
                remask_stage=0.9,
                num_iters=256,
                vqvae_config=None,
-               condition_type="None",
+               condition_type="none",
                condition_policy="concat",
                context_dim=512,
                cfg_prob=0.0,
@@ -98,7 +98,7 @@ class MAR(nn.Module):
         (mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
 
     self.apply(self._init_weights)  # initialize weights
-    if condition_type not in ['None', 'category']:
+    if condition_type not in ["none", "category"]:
       self._init_weights(self.mask_token)
 
   def _init_blocks(self):
@@ -135,7 +135,7 @@ class MAR(nn.Module):
     return mask
 
   def random_masking(self, x, mask, octree, depth_list, cond=None):
-    if self.condition_type in ['None', 'category']:
+    if self.condition_type in ["none", "category"]:
       batch_id = get_batch_id(octree, depth_list)
       mask_tokens = cond[batch_id]
     elif self.condition_type in ['image', 'text']:
@@ -187,7 +187,7 @@ class MAR(nn.Module):
   def forward(self, octree_in, depth_low, depth_high, condition=None, split=None, vqvae=None):
     batch_size = octree_in.batch_size
 
-    if self.condition_type == "None":
+    if self.condition_type == "none":
       condition = torch.zeros(batch_size).long().to(octree_in.device)
       cond = self.class_emb(condition)  # 1 x C
     elif self.condition_type == "category":
@@ -286,7 +286,7 @@ class MAR(nn.Module):
   @torch.no_grad()
   def generate(self, octree, depth_low, depth_high, token_embeddings=None, condition=None, vqvae=None, cfg_scale=None):
     batch_size = octree.batch_size
-    if self.condition_type == "None":
+    if self.condition_type == "none":
       condition = torch.zeros(batch_size).long().to(octree.device)
       cond = self.class_emb(condition)  # 1 x C
     elif self.condition_type == "category":
@@ -410,7 +410,7 @@ class MAREncoderDecoder(MAR):
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
         nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
-        use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
+        use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.decoder_ln = eval(self.norm_type)(self.num_embed)
 
