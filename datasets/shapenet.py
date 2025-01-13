@@ -238,8 +238,7 @@ class ReadImage:
 
   def load_image(self, uid):
     uid = uid.split('/')[-1]
-    img = Image.open(os.path.join(self.image_folder,
-                     f'{uid}_0.png')).convert('RGBA')
+    img = Image.open(os.path.join(self.image_folder, f'{uid}_0.png')).convert('RGB')
     return img
 
   def __call__(self, uid):

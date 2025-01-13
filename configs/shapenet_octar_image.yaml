@@ -3,9 +3,10 @@ BASE:
 
 DATA:
   train:
-    load_sketch: &load_sketch True
-    load_image: &load_image False
-    image_location: &image_location data/ShapeNet/sketch_256
+    load_sketch: &load_sketch False
+    load_image: &load_image True
+    # image_location: &image_location data/ShapeNet/sketch_256
+    image_location: &image_location data/ShapeNet/fid_images/car/view_0
 
   test:
     load_sketch: *load_sketch
