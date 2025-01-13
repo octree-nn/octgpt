@@ -443,7 +443,8 @@ def get_depth2batch_indices(octree, depth_list, buffer_size=None, mask=None):
   # Rearange data from depth-by-depth to batch-by-batch
   batch_id = get_batch_id(octree, depth_list)
   if buffer_size is not None:
-    batch_buffer = torch.arange(octree.batch_size, device=octree.device).reshape(-1, 1)
+    batch_buffer = torch.arange(
+        octree.batch_size, device=octree.device).reshape(-1, 1)
     batch_buffer = batch_buffer.repeat(1, buffer_size).reshape(-1)
     batch_id = torch.cat([batch_buffer, batch_id])
   if mask is not None:
@@ -520,3 +521,35 @@ def octree_copy_unpool(data: torch.Tensor, octree: Octree, depth: int, nempty: b
     out = octree_depad(out, octree, depth+1)
   return out
 
+
+class TorchRecorder:
+  def __init__(self):
+    self.total_time = 0
+    self.calls = 0
+    self.total_memory = 0
+
+  def __enter__(self):
+    self.start = torch.cuda.Event(enable_timing=True)
+    self.end = torch.cuda.Event(enable_timing=True)
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    self.start.record()
+
+  def __exit__(self, *args):
+    self.end.record()
+    torch.cuda.synchronize()
+    self.total_time += self.start.elapsed_time(self.end)
+    self.calls += 1
+    peak_memory = torch.cuda.memory.max_memory_allocated() / (2 ** 30)
+    self.total_memory += peak_memory
+
+  def reset(self):
+    self.total_time = 0
+    self.calls = 0
+    self.total_memory = 0
+
+  def avg_time(self):
+    return self.total_time / self.calls if self.calls > 0 else 0
+
+  def avg_memory(self):
+    return self.total_memory / self.calls if self.calls > 0 else 0

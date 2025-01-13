@@ -28,8 +28,8 @@ def expand_checkpoint(model, checkpoint):
       else:
         new_param = expand_mlp(param, ckpt_param)
       # Ensure the expanded parameter matches the model's parameter shape
-      assert new_param.shape == param.shape, f"Shape mismatch after expansion: {
-          new_param.shape} vs {param.shape}"
+      assert new_param.shape == param.shape, \
+          f"Shape mismatch after expansion: {new_param.shape} vs {param.shape}"
       expanded_checkpoint[name] = new_param
     else:  # If the parameter is not in the checkpoint, then initialize with zeros
       expanded_checkpoint[name] = torch.zeros_like(param)
@@ -72,9 +72,11 @@ def expand_mlp(param, ckpt_param, zero_init=True):
     new_param[:ckpt_shape[0]] = ckpt_param
   return new_param
 
+
 def expand_norm_weight(param, ckpt_param):
   model_shape = param.shape
   ckpt_shape = ckpt_param.shape
   new_param = torch.zeros_like(param)
-  new_param[:ckpt_shape[0]] = ckpt_param * torch.sqrt(torch.tensor(ckpt_shape[0] / model_shape[0]))
+  new_param[:ckpt_shape[0]] = ckpt_param * \
+      torch.sqrt(torch.tensor(ckpt_shape[0] / model_shape[0]))
   return new_param
