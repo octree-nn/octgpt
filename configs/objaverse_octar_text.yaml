@@ -12,7 +12,7 @@ DATA:
   test:
     points_scale: *points_scale
     location: *location
-    filelist: data/Objaverse/filelist/objaverse_5w_val.txt
+    filelist: data/Objaverse/filelist/objaverse_5w_train.txt
     load_text: *load_text
     text_location: *text_location
 
@@ -25,3 +25,4 @@ MODEL:
     condition_policy: cross_attn
     context_dim: 768
     cfg_prob: 0.2
+    cfg_scale: 1.0
