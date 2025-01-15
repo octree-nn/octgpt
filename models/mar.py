@@ -33,6 +33,7 @@ class MAR(nn.Module):
                drop_rate=0.1,
                pos_emb_type="SinPosEmb",
                norm_type="LayerNorm",
+               use_rope=True,
                use_checkpoint=True,
                use_swin=True,
                random_flip=0.0,
@@ -59,6 +60,7 @@ class MAR(nn.Module):
     self.norm_type = norm_type
     self.use_checkpoint = use_checkpoint
     self.use_swin = use_swin
+    self.use_rope = use_rope
     self.random_flip = random_flip
     self.start_temperature = start_temperature
     self.remask_stage = remask_stage
@@ -107,7 +109,7 @@ class MAR(nn.Module):
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type), nempty=False,
-        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin, cond_interval=3)
+        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin, cond_interval=3, use_rope=self.use_rope)
     self.ln_x = eval(self.norm_type)(self.num_embed)
 
   def _init_weights(self, module):
@@ -401,6 +403,7 @@ class MAREncoderDecoder(MAR):
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
         nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
+        use_rope=self.use_rope,
         use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.encoder_ln = eval(self.norm_type)(self.num_embed)
@@ -410,6 +413,7 @@ class MAREncoderDecoder(MAR):
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
         nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
+        use_rope=self.use_rope,
         use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.decoder_ln = eval(self.norm_type)(self.num_embed)

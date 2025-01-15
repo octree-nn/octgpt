@@ -324,6 +324,7 @@ class OctFormerBlock(torch.nn.Module):
                qk_scale: Optional[float] = None, attn_drop: float = 0.0,
                proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
                use_swin: bool = False, use_ctx: bool = False, ctx_dim: int = None,
+               use_rope: bool = True,
                pos_emb: torch.nn.Module = SinPosEmb,
                norm_layer: torch.nn.Module = LayerNorm,
                activation: torch.nn.Module = torch.nn.GELU,
@@ -332,7 +333,7 @@ class OctFormerBlock(torch.nn.Module):
     self.norm1 = norm_layer(dim)
     self.attention = OctreeAttention(dim, patch_size, num_heads, qkv_bias,
                                      qk_scale, attn_drop, proj_drop, dilation,
-                                     use_swin=use_swin)
+                                     use_swin=use_swin, use_rope=use_rope)
     self.norm2 = norm_layer(dim)
     self.mlp = MLP(dim, int(dim * mlp_ratio), dim, activation, proj_drop)
     # self.drop_path = ocnn.nn.OctreeDropPath(drop_path, nempty)
@@ -369,6 +370,7 @@ class OctFormerStage(torch.nn.Module):
                attn_drop: float = 0.0, proj_drop: float = 0.0, drop_path: float = 0.0, 
                nempty: bool = True, use_swin: bool = False, use_checkpoint: bool = True, 
                use_ctx: bool = False, ctx_dim: int = None, ctx_interval: int = 2,
+               use_rope: bool = True,
                pos_emb: torch.nn.Module = SinPosEmb,
                norm_layer: torch.nn.Module = LayerNorm,
                activation: torch.nn.Module = torch.nn.GELU,
@@ -383,6 +385,7 @@ class OctFormerStage(torch.nn.Module):
         dilation=1 if (i % 2 == 0) else dilation,
         mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
+        use_rope=use_rope,
         use_swin=((i // 2) % 2 == 1) if use_swin else False,
         use_ctx=(i % ctx_interval == 0) if use_ctx else False, ctx_dim=ctx_dim,
         drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
@@ -404,6 +407,7 @@ class OctFormer(torch.nn.Module):
                channels: int = 192, num_blocks: int = 16, num_heads: int = 16,
                patch_size: int = 1024, dilation: int = 16,
                drop_path: float = 0.5, attn_drop: float = 0.1, proj_drop: float = 0.1,
+               use_rope: bool = True,
                nempty: bool = False, use_checkpoint: bool = True, use_swin: bool = False, 
                use_ctx: bool = False, ctx_dim: int = None, ctx_interval: int = 2,
                pos_emb: torch.nn.Module = SinPosEmb,
@@ -417,6 +421,7 @@ class OctFormer(torch.nn.Module):
 
     self.layers = OctFormerStage(
         dim=channels, num_heads=num_heads, patch_size=patch_size,
+        use_rope=use_rope,
         # drop_path=torch.linspace(0, drop_path, num_blocks).tolist(),
         dilation=dilation, nempty=nempty, num_blocks=num_blocks,
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
