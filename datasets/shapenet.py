@@ -1,7 +1,6 @@
 import os
 import ocnn
 import torch
-import torch.nn.functional as F
 import torchvision.transforms as transforms
 import numpy as np
 from PIL import Image
@@ -172,7 +171,7 @@ class TransformShape:
 
     if self.flags.get('load_image'):
       output['image'] = sample['image']
-    
+
     if self.flags.get('load_text'):
       output['text'] = sample['text']
 
@@ -223,7 +222,7 @@ class ReadFile:
       img = self.load_image(uid)
       output['uid'] = uid
       output['image'] = img
-    
+
     if self.flags.get('load_text'):
       text = self.load_text(uid)
       output['text'] = text
