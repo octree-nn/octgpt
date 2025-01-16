@@ -49,7 +49,7 @@ class TextEncoder(nn.Module):
 
   def forward(self, text, device):
     if self.encoder_type == "clip":
-      text = self.processor(text=text, return_tensors="pt").to(device)
+      text = self.processor(text=text, return_tensors="pt", max_length=77).to(device)
       outputs = self.encoder(**text)
       features = outputs.last_hidden_state # (B, 77, 768)
     return features
