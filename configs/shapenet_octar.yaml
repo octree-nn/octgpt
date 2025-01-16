@@ -1,14 +1,14 @@
 SOLVER:
-  gpu: 0,1,2,3,
+  gpu: 0,1,2,3
   run: train
 
-  logdir: logs/shapenet_chair_text
+  logdir: logs/test/shapenet_octar
   max_epoch: 400
   test_every_epoch: 1
   log_per_iter: 50
   ckpt_num: 10
   expand_ckpt: False
-  port: 20001
+  port: 10001
 
   # optimizer
   type: adamw
@@ -101,8 +101,8 @@ MODEL:
     num_classes: 1
     split_size: 2
     vq_size: 128
-    patch_size: 2048
-    dilation: 2
+    patch_size: 1024
+    dilation: 8
     buffer_size: 64
     drop_rate: 0.1
     pos_emb_type: AbsPosEmb
