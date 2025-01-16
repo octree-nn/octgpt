@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import pickle
 from tqdm import tqdm
-gpu_ids = 7
+gpu_ids = 0
 os.environ["CUDA_VISIBLE_DEVICES"] = f"{gpu_ids}"
 
 
@@ -43,15 +43,18 @@ def compute_metrics(sample_pcs, ref_pcs, batch_size):
 num_samples = 2048
 topk = 5
 category = "airplane"
-mesh_dir = '/home/zhoucz/rendering/ar/uncond/airplane'
+mesh_dir = 'logs/airplane/mar_bv32_ec_b24_flip1_mask0.5/results'
 filelist_dir = "data/ShapeNet/filelist"
-pointcloud_dir = "data/ShapeNet/dataset_10w/"
+pointcloud_dir = "data/ShapeNet/dataset_new"
 collect_dir = "data/ShapeNet/pointcloud_2048"
 
 def collect_pointclouds():
   pointcloud_dict = {}
   filenames = get_filenames(os.path.join(filelist_dir, f"train_{category}.txt"))
-
+  filename_collect = os.path.join(collect_dir, f"{category}.pkl")
+  if os.path.exists(filename_collect):
+    print(f"File {filename_collect} already exists.")
+    return
   for filename in tqdm(filenames):
     filename_pointcloud = os.path.join(
         pointcloud_dir, filename, "pointcloud.npz")
@@ -62,7 +65,7 @@ def collect_pointclouds():
     pointcloud_dict[filename] = points
 
   os.makedirs(collect_dir, exist_ok=True)
-  with open(os.path.join(collect_dir, f"{category}.pkl"), 'wb') as file:
+  with open(filename_collect, 'wb') as file:
     pickle.dump(pointcloud_dict, file)
 
 
@@ -74,7 +77,9 @@ def calc_diversity():
   ref_pcs = np.stack(ref_pcs)
   ref_pcs = torch.from_numpy(ref_pcs).cuda().to(torch.float32)
 
-  for filename in os.listdir(mesh_dir):
+  for filename in tqdm(os.listdir(mesh_dir)):
+    if not filename.endswith('.obj'):
+      continue
     mesh_path = os.path.join(mesh_dir, filename)
 
     mesh = trimesh.load(mesh_path, force='mesh')
@@ -83,21 +88,22 @@ def calc_diversity():
 
     sample_pcs = torch.from_numpy(sample_pcs).cuda().to(torch.float32)
     cd_list = compute_metrics(sample_pcs, ref_pcs, batch_size=64).squeeze(0)
-    topk_values, topk_indices = torch.topk(cd_list, topk, largest=False)
-    for i in range(topk):
-      print(f"Top {i+1} CD: {topk_values[i]} filename: {ref_key[topk_indices[i].long().item()]}")
     min_cd = cd_list.min().item()
     min_cd_list.append(min_cd)
 
+    # topk_values, topk_indices = torch.topk(cd_list, topk, largest=False)
+    # for i in range(topk):
+    #   print(f"Top {i+1} CD: {topk_values[i]} filename: {ref_key[topk_indices[i].long().item()]}")
+
   min_cd_list = np.array(min_cd_list)
-  np.save(f'mytools/cd_{category}.npy', min_cd_list)
+  np.save(os.path.join(mesh_dir, f"min_cd.npy"), min_cd_list)
   import matplotlib.pyplot as plt
 
   plt.hist(min_cd_list, bins=50)
   plt.xlabel('Chamfer Distance')
   plt.ylabel('Count')
   plt.title('Histogram')
-  plt.savefig('mytools/cd_hist.png')
+  plt.savefig(os.path.join(mesh_dir, f"min_cd_hist.png"))
   plt.close()
 
 if __name__ == "__main__":
