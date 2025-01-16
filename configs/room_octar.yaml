@@ -1,0 +1,17 @@
+BASE:
+  - configs/shapenet_octar.yaml
+
+DATA:
+  train:
+    name: &name synthetic_room
+    points_scale: &points_scale 0.6
+    location: &location data/room/synthetic_room_dataset
+    filelist: &filelist data/room/filelist/train.txt
+    load_occu: &load_occu False
+
+  test:
+    name: *name
+    points_scale: *points_scale
+    location: *location
+    filelist: data/room/filelist/val.txt
+    load_occu: *load_occu

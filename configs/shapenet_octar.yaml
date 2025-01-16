@@ -28,7 +28,7 @@ SOLVER:
 
 DATA:
   train:
-    name: &name shapenet_vae
+    name: &name shapenet
 
     # octree building
     depth: &depth 8

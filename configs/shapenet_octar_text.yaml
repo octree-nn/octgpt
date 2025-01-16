@@ -3,19 +3,14 @@ BASE:
 
 DATA:
   train:
-    points_scale: &points_scale 1.0
-    location: &location /mnt/sdc/weist/data/ShapeNet/dataset_new/
-    filelist: &filelist /mnt/sdc/weist/data/ShapeNet/filelist/train_chair.txt
+    filelist: &filelist data/ShapeNet/filelist/train_chair.txt
     load_text: &load_text True
-    text_location: &text_location /mnt/sdc/weist/data/ShapeNet/filelist/captions.tablechair.csv
+    text_location: &text_location data/ShapeNet/filelist/captions.tablechair.csv
 
   test:
-    points_scale: *points_scale
-    location: *location
-    filelist: /mnt/sdc/weist/data/ShapeNet/filelist/test_chair.txt
+    filelist: *filelist
     load_text: *load_text
     text_location: *text_location
-
     
 MODEL:
   GPT:

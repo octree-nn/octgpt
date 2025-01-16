@@ -10,7 +10,6 @@ from utils.expand_ckpt import expand_checkpoint
 from utils.distributed import get_rank
 from models.mar import MAR, MAREncoderDecoder
 from models.condition import ImageEncoder, TextEncoder
-from datasets import get_shapenet_dataset
 from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num
 from tqdm import tqdm
 import copy
@@ -66,7 +65,7 @@ class OctarSolver(Solver):
     return model
 
   def get_dataset(self, flags):
-    return get_shapenet_dataset(flags)
+    return builder.build_dataset(flags)
 
   def config_optimizer(self):
     super().config_optimizer()
@@ -222,11 +221,11 @@ class OctarSolver(Solver):
 
     vq_indices = self.vqvae_module.quantizer(vq_code)[1]
     gt_vq_code = self.vqvae_module.extract_code(octree_in)
-    gt_indices = self.vqvae_module.quantizer(gt_vq_code)[1]
+    gt_zq, gt_indices, _ = self.vqvae_module.quantizer(gt_vq_code)
 
     print(
         f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.numel()} indices are different")
-    self.export_results(octree_in, index + 1, gt_vq_code)
+    self.export_results(octree_in, index + 1, gt_zq)
     self.export_results(octree_out, index, vq_code)
   
   def load_checkpoint(self):

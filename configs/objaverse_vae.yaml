@@ -4,6 +4,7 @@ BASE:
 
 DATA:
   train:
+    name: &name objaverse
     points_scale: &points_scale 1.0  # the scale of point clouds
     location: &location data/Objaverse/objaverse_5w
     filelist: data/Objaverse/filelist/objaverse_5w_train.txt
@@ -11,6 +12,7 @@ DATA:
 
 
   test:
+    name: *name
     points_scale: *points_scale
     location: *location
     filelist: data/Objaverse/filelist/objaverse_5w_val.txt

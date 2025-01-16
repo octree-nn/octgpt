@@ -275,8 +275,16 @@ class ReadSketch:
 class ReadText:
   def __init__(self, flags):
     self.flags = flags
-    # self.read_objaverse()
-    self.read_text2shape()
+    if flags.name == 'shapenet':
+      self.read_text2shape()
+    elif flags.name == 'objaverse':
+      self.read_objaverse()
+    else:
+      raise ValueError(f'Unsupported dataset: {flags.name}')
+  
+  # def read_shapenet(self):
+  #   text_csv = pd.read_csv(self.flags.text_location)
+  #   self.text_dict = dict(zip(text_csv['modelId'], text_csv['description']))
 
   def read_objaverse(self):
     text_csv = pd.read_csv(self.flags.text_location,
