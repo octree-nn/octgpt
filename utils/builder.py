@@ -132,7 +132,7 @@ def build_vae_model(flags):
 
 
 def build_dataset(flags):
-  if flags.name == 'shapenet':
+  if flags.name == 'shapenet' or flags.name == 'objaverse':
     return get_shapenet_dataset(flags)
   elif flags.name == 'synthetic_room':
     return get_synthetic_room_dataset(flags)
