@@ -154,11 +154,11 @@ class OctarSolver(Solver):
           self.logdir, f'results/octree_depth{d}'), index=index)
 
     # decode the octree
-    # for d in range(self.depth_stop, self.depth):
-    #   split_zero_d = torch.zeros(
-    #       octree_out.nnum[d], device=octree_out.device).long()
-    #   octree_out.octree_split(split_zero_d, d)
-    #   octree_out.octree_grow(d + 1)
+    for d in range(self.depth_stop, self.depth):
+      split_zero_d = torch.zeros(
+          octree_out.nnum[d], device=octree_out.device).long()
+      octree_out.octree_split(split_zero_d, d)
+      octree_out.octree_grow(d + 1)
     doctree_out = OctreeD(octree_out)
     with torch.no_grad():
       output = self.vqvae_module.decode_code(
