@@ -4,6 +4,7 @@ import torch
 import torchvision.transforms as transforms
 import numpy as np
 from PIL import Image
+import random
 import pandas as pd
 from thsolver import Dataset
 from ocnn.octree import Octree, Points
@@ -274,17 +275,29 @@ class ReadSketch:
 class ReadText:
   def __init__(self, flags):
     self.flags = flags
-    self.read_objaverse()
+    # self.read_objaverse()
+    self.read_text2shape()
 
   def read_objaverse(self):
     text_csv = pd.read_csv(self.flags.text_location,
                            header=None, names=["uid", "text"])
     self.text_dict = dict(zip(text_csv['uid'], text_csv['text']))
 
+  def read_text2shape(self):
+    text_csv = pd.read_csv(self.flags.text_location)
+    self.text_dict = text_csv.groupby('modelId')['description'].apply(list).to_dict()
+  
   def __call__(self, uid):
     uid = uid.split('/')[-1]
     if uid in self.text_dict:
-      text = self.text_dict[uid]
+      texts = self.text_dict[uid]
+      if isinstance(texts, str):
+        return texts
+      if len(texts) == 0:
+        return "A 3D model."
+      text = random.choice(texts)
+      if not isinstance(text, str):
+        return "A 3D model."
       return text
     else:
       return "A 3D model."

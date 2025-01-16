@@ -1,8 +1,8 @@
 SOLVER:
-  gpu: 0,
+  gpu: 0,1,2,3,
   run: train
 
-  logdir: logs/shapenet_vae/vae
+  logdir: logs/shapenet_chair_text
   max_epoch: 400
   test_every_epoch: 1
   log_per_iter: 50
@@ -81,12 +81,12 @@ MODEL:
   depth: *depth
   full_depth: *full_depth
   depth_stop: 6
-  vqvae_ckpt: saved_ckpt/vqvae_model.pth
+  vqvae_ckpt: saved_ckpt/vqvae_huge_im5_bsq32_200epoch.pth
   find_unused_parameters: True
   model_name: MAREncoderDecoder
 
   VQVAE:
-    name: vqvae
+    name: vqvae_huge
     in_channels: 4
     embedding_sizes: 128
     embedding_channels: 32

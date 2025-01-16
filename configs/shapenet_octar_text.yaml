@@ -1,0 +1,28 @@
+BASE:
+  - configs/shapenet_octar.yaml
+
+DATA:
+  train:
+    points_scale: &points_scale 1.0
+    location: &location /mnt/sdc/weist/data/ShapeNet/dataset_new/
+    filelist: &filelist /mnt/sdc/weist/data/ShapeNet/filelist/train_chair.txt
+    load_text: &load_text True
+    text_location: &text_location /mnt/sdc/weist/data/ShapeNet/filelist/captions.tablechair.csv
+
+  test:
+    points_scale: *points_scale
+    location: *location
+    filelist: /mnt/sdc/weist/data/ShapeNet/filelist/test_chair.txt
+    load_text: *load_text
+    text_location: *text_location
+
+    
+MODEL:
+  GPT:
+    buffer_size: 77
+    condition_type: text
+    condition_encoder: clip
+    condition_policy: cross_attn
+    context_dim: 768
+    cfg_prob: 0.1
+    cfg_scale: 1.0
