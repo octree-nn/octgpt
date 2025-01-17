@@ -3,6 +3,7 @@ BASE:
 
 DATA:
   train:
+    name: &name objaverse
     points_scale: &points_scale 1.0
     location: &location data/Objaverse/objaverse_5w
     filelist: &filelist data/Objaverse/filelist/objaverse_5w_train.txt
@@ -10,6 +11,7 @@ DATA:
     text_location: &text_location data/Objaverse/filelist/Cap3D_automated_Objaverse_highquality.csv
 
   test:
+    name: *name
     points_scale: *points_scale
     location: *location
     filelist: data/Objaverse/filelist/objaverse_5w_val.txt
@@ -20,6 +22,7 @@ DATA:
 MODEL:
   GPT:
     buffer_size: 77
+    num_iters: [64, 128, 128, 1024]
     condition_type: text
     condition_encoder: clip
     condition_policy: cross_attn
