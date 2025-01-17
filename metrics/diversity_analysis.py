@@ -8,6 +8,8 @@ import numpy as np
 import torch
 import pickle
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+
 gpu_ids = 0
 os.environ["CUDA_VISIBLE_DEVICES"] = f"{gpu_ids}"
 
@@ -97,9 +99,14 @@ def calc_diversity():
 
   min_cd_list = np.array(min_cd_list)
   np.save(os.path.join(mesh_dir, f"min_cd.npy"), min_cd_list)
-  import matplotlib.pyplot as plt
 
-  plt.hist(min_cd_list, bins=50)
+def plot_hist():
+  min_cd_list = np.load(os.path.join(mesh_dir, f"min_cd.npy"))
+  min_cd_list *= 1000
+  
+  bins = [0, 0.05, 0.1, 0.15, 0.2, 0.4, 0.8, 1.2, 1.6, 2.0, 3, 4, 6, 8, 10, 15, 20, 25, 30, 40]
+
+  plt.hist(min_cd_list, bins=bins)
   plt.xlabel('Chamfer Distance')
   plt.ylabel('Count')
   plt.title('Histogram')
@@ -109,3 +116,4 @@ def calc_diversity():
 if __name__ == "__main__":
   collect_pointclouds()
   calc_diversity()
+  # plot_hist()
