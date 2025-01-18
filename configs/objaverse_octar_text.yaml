@@ -22,6 +22,7 @@ DATA:
 MODEL:
   GPT:
     buffer_size: 77
+    random_flip: 0.5
     num_iters: [64, 128, 128, 1024]
     condition_type: text
     condition_encoder: clip

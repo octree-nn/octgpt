@@ -7,6 +7,7 @@ import trimesh
 import numpy as np
 import torch
 import pickle
+import shutil
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -45,10 +46,11 @@ def compute_metrics(sample_pcs, ref_pcs, batch_size):
 num_samples = 2048
 topk = 5
 category = "car"
-mesh_dir = 'logs/car/mar_bv32_ec_b24_flip1_mask0.5/results'
+mesh_dir = '/home/zhoucz/rendering/ar/uncond/car'
 filelist_dir = "data/ShapeNet/filelist"
 pointcloud_dir = "data/ShapeNet/dataset_new"
 collect_dir = "data/ShapeNet/pointcloud_2048"
+similar_dir = "mytools/similar"
 
 def collect_pointclouds():
   pointcloud_dict = {}
@@ -71,7 +73,7 @@ def collect_pointclouds():
     pickle.dump(pointcloud_dict, file)
 
 
-def calc_diversity():
+def calc_diversity(find_topk=False):
   min_cd_list = []
   with open(os.path.join(collect_dir, f"{category}.pkl"), 'rb') as file:
     raw = pickle.load(file)
@@ -92,10 +94,15 @@ def calc_diversity():
     cd_list = compute_metrics(sample_pcs, ref_pcs, batch_size=64).squeeze(0)
     min_cd = cd_list.min().item()
     min_cd_list.append(min_cd)
-
-    # topk_values, topk_indices = torch.topk(cd_list, topk, largest=False)
-    # for i in range(topk):
-    #   print(f"Top {i+1} CD: {topk_values[i]} filename: {ref_key[topk_indices[i].long().item()]}")
+    if find_topk:
+      print(filename)
+      topk_values, topk_indices = torch.topk(cd_list, topk, largest=False)
+      for i in range(topk):
+        similar_key = ref_key[topk_indices[i].long().item()]
+        print(f"Top {i+1} CD: {topk_values[i]} filename: {similar_key}")
+        filename_similar = os.path.join(similar_dir, f"{category}/{filename[:-4]}/", f"top{i}.obj")
+        os.makedirs(os.path.dirname(filename_similar), exist_ok=True)
+        shutil.copy2(f"data/ShapeNet/mesh_256/{similar_key}.obj", filename_similar)
 
   min_cd_list = np.array(min_cd_list)
   np.save(os.path.join(mesh_dir, f"min_cd.npy"), min_cd_list)
@@ -132,5 +139,5 @@ def plot_hist():
 
 if __name__ == "__main__":
   # collect_pointclouds()
-  # calc_diversity()
-  plot_hist()
+  calc_diversity()
+  # plot_hist()

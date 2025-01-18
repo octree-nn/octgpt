@@ -208,7 +208,7 @@ class MAR(nn.Module):
       vq_code = vqvae.extract_code(octree_in)
       zq, indices, _ = vqvae.quantizer(vq_code)
       targets_vq = copy.deepcopy(indices)
-      if self.random_flip > 0.0 and not self.training:
+      if self.random_flip > 0.0 and self.training:
         flip = torch.rand_like(indices.float()) < self.random_flip
         indices = torch.where(flip, 1 - indices, indices)
         zq = vqvae.quantizer.extract_code(indices)
