@@ -9,7 +9,7 @@ import torch
 import pickle
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-
+import pandas as pd
 gpu_ids = 0
 os.environ["CUDA_VISIBLE_DEVICES"] = f"{gpu_ids}"
 
@@ -44,8 +44,8 @@ def compute_metrics(sample_pcs, ref_pcs, batch_size):
 
 num_samples = 2048
 topk = 5
-category = "airplane"
-mesh_dir = 'logs/airplane/mar_bv32_ec_b24_flip1_mask0.5/results'
+category = "car"
+mesh_dir = 'logs/car/mar_bv32_ec_b24_flip1_mask0.5/results'
 filelist_dir = "data/ShapeNet/filelist"
 pointcloud_dir = "data/ShapeNet/dataset_new"
 collect_dir = "data/ShapeNet/pointcloud_2048"
@@ -104,16 +104,33 @@ def plot_hist():
   min_cd_list = np.load(os.path.join(mesh_dir, f"min_cd.npy"))
   min_cd_list *= 1000
   
-  bins = [0, 0.05, 0.1, 0.15, 0.2, 0.4, 0.8, 1.2, 1.6, 2.0, 3, 4, 6, 8, 10, 15, 20, 25, 30, 40]
+  bins = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 25, 30]
 
-  plt.hist(min_cd_list, bins=bins)
-  plt.xlabel('Chamfer Distance')
-  plt.ylabel('Count')
-  plt.title('Histogram')
-  plt.savefig(os.path.join(mesh_dir, f"min_cd_hist.png"))
-  plt.close()
+  counts, _ = np.histogram(min_cd_list, bins = bins)
+  bar_width = 1
+  x = np.arange(len(counts))
+  plt.figure(figsize=(10, 4))
+  plt.bar(x, counts, width=bar_width, color='lightblue', edgecolor='skyblue', linewidth=2, align='center')
+
+  # 设置x轴刻度和标签
+  xticks_positions = np.arange(-0.5, len(counts) + 0.5, 1)
+  xticks_positions = [xticks_positions[0], xticks_positions[5], xticks_positions[10], xticks_positions[14], xticks_positions[16]]
+  xticks_labels = [0, 5, 10, 20, 30]
+  plt.xticks(xticks_positions, xticks_labels)
+
+  # plt.title('RUNOOB hist() Test')
+  plt.xlabel('CD')
+  plt.ylabel('Frequency')
+
+  # plt.axvline(x=10, color='black', linewidth=0.5)
+
+  plt.gca().spines['top'].set_visible(False)
+  plt.gca().spines['right'].set_visible(False)
+
+  plt.savefig(os.path.join(mesh_dir, f"hist.svg"), format = 'svg')
+  plt.savefig(os.path.join(mesh_dir, f"hist.png"))
 
 if __name__ == "__main__":
-  collect_pointclouds()
-  calc_diversity()
-  # plot_hist()
+  # collect_pointclouds()
+  # calc_diversity()
+  plot_hist()
