@@ -521,6 +521,11 @@ def octree_copy_unpool(data: torch.Tensor, octree: Octree, depth: int, nempty: b
     out = octree_depad(out, octree, depth+1)
   return out
 
+def get_filenames(filelist):
+  with open(filelist, 'r') as fid:
+      lines = fid.readlines()
+  filenames = [line.split()[0] for line in lines]
+  return filenames
 
 class TorchRecorder:
   def __init__(self):

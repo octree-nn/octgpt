@@ -1,0 +1,20 @@
+BASE:
+  - configs/objaverse_octar_text.yaml
+
+DATA:
+  train:
+    load_text: &load_text False
+
+  test:
+    load_text: *load_text
+
+    
+MODEL:
+  GPT:
+    buffer_size: 77
+    condition_type: none
+    condition_encoder: clip
+    condition_policy: concat
+    context_dim: 768
+    cfg_prob: 0.0
+    cfg_scale: 1.0
