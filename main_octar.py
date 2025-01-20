@@ -10,7 +10,7 @@ from utils.expand_ckpt import expand_checkpoint
 from utils.distributed import get_rank
 from models.mar import MAR, MAREncoderDecoder
 from models.condition import ImageEncoder, TextEncoder
-from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num
+from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num, snc_synth_id_to_label_13
 from tqdm import tqdm
 import copy
 import cv2
@@ -80,7 +80,11 @@ class OctarSolver(Solver):
     if self.condition_type == "none":
       batch['condition'] = None
     elif self.condition_type == "category":
-      label = [snc_synth_id_to_label_5[filename.split("/")[0]]
+      if self.FLAGS.DATA.train.filelist.endswith("im_5.txt"):
+        id_to_label = snc_synth_id_to_label_5
+      elif self.FLAGS.DATA.train.filelist.endswith("im_all.txt"):
+        id_to_label = snc_synth_id_to_label_13
+      label = [id_to_label[filename.split("/")[0]]
                for filename in batch['filename']]
       batch['condition'] = torch.tensor(label, device=self.device)
     elif self.condition_type == "image":
