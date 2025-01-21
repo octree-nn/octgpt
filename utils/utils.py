@@ -278,17 +278,18 @@ def _voxel2mesh(voxels, threshold=0.5):
   back_faces = [[0, 1, 3], [2, 0, 3]]
   back_normals = [[0, -1, 0], [0, -1, 0], [0, -1, 0], [0, -1, 0]]
 
-  top_verts = np.array(top_verts)
+  vert_scale = 1.0
+  top_verts = np.array(top_verts) * vert_scale
   top_faces = np.array(top_faces)
-  bottom_verts = np.array(bottom_verts)
+  bottom_verts = np.array(bottom_verts) * vert_scale
   bottom_faces = np.array(bottom_faces)
-  left_verts = np.array(left_verts)
+  left_verts = np.array(left_verts) * vert_scale
   left_faces = np.array(left_faces)
-  right_verts = np.array(right_verts)
+  right_verts = np.array(right_verts) * vert_scale
   right_faces = np.array(right_faces)
-  front_verts = np.array(front_verts)
+  front_verts = np.array(front_verts) * vert_scale
   front_faces = np.array(front_faces)
-  back_verts = np.array(back_verts)
+  back_verts = np.array(back_verts) * vert_scale
   back_faces = np.array(back_faces)
 
   dim = voxels.shape[0]
