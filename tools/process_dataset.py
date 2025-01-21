@@ -27,6 +27,7 @@ def downsample_points():
     filename_in = os.path.join(args.input_folder, filename, 'pointcloud.npz')
     filename_out = os.path.join(args.output_folder, filename, 'pointcloud.npz')
     if not os.path.exists(filename_in): continue
+    if os.path.exists(filename_out): continue
 
     folder_out = os.path.dirname(filename_out)
     if not os.path.exists(folder_out):
