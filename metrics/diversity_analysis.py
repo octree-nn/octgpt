@@ -46,7 +46,7 @@ def compute_metrics(sample_pcs, ref_pcs, batch_size):
 num_samples = 2048
 topk = 5
 category = "car"
-mesh_dir = '/home/zhoucz/rendering/ar/uncond/car'
+mesh_dir = 'logs/car/mar_bv32_ec_b24_flip1_mask0.5/results'
 filelist_dir = "data/ShapeNet/filelist"
 pointcloud_dir = "data/ShapeNet/dataset_new"
 collect_dir = "data/ShapeNet/pointcloud_2048"
@@ -116,18 +116,20 @@ def plot_hist():
   counts, _ = np.histogram(min_cd_list, bins = bins)
   bar_width = 1
   x = np.arange(len(counts))
-  plt.figure(figsize=(10, 4))
+  plt.figure(figsize=(10, 5))
   plt.bar(x, counts, width=bar_width, color='lightblue', edgecolor='skyblue', linewidth=2, align='center')
 
   # 设置x轴刻度和标签
   xticks_positions = np.arange(-0.5, len(counts) + 0.5, 1)
   xticks_positions = [xticks_positions[0], xticks_positions[5], xticks_positions[10], xticks_positions[14], xticks_positions[16]]
   xticks_labels = [0, 5, 10, 20, 30]
-  plt.xticks(xticks_positions, xticks_labels)
-
+  family = "Linux Biolinum O"
+  plt.xticks(xticks_positions, xticks_labels, fontproperties=family, size=16)
+  plt.yticks(fontproperties=family, size=16)
   # plt.title('RUNOOB hist() Test')
-  plt.xlabel('CD')
-  plt.ylabel('Frequency')
+  
+  plt.xlabel('Chamfer Distance', family=family, size=24)
+  plt.ylabel('Count', family=family, size=24)
 
   # plt.axvline(x=10, color='black', linewidth=0.5)
 
@@ -139,5 +141,5 @@ def plot_hist():
 
 if __name__ == "__main__":
   # collect_pointclouds()
-  calc_diversity()
-  # plot_hist()
+  # calc_diversity()
+  plot_hist()
