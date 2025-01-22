@@ -370,10 +370,10 @@ class MAR(nn.Module):
           token_embedding_d[mask_to_pred] = self.split_emb(ix)
         else:
           vq_logits = self.vq_head(x)
-          # if i > num_iters * self.remask_stage:
-          #   vq_logits = vq_logits.reshape(-1, self.vq_groups, self.vq_size)
-          #   remask = self.get_remask(vq_logits, vq_indices_d, mask_d, topk=5, remask_prob=0.1)
-          #   mask_to_pred = mask_to_pred | remask
+          if i > num_iters * self.remask_stage:
+            vq_logits = vq_logits.reshape(-1, self.vq_groups, self.vq_size)
+            remask = self.get_remask(vq_logits, vq_indices_d, mask_d, topk=5, remask_prob=0.1)
+            mask_to_pred = mask_to_pred | remask
           vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
           ix = sample(vq_logits, temperature=temperature)
           ix = ix.reshape(-1, self.vq_groups)

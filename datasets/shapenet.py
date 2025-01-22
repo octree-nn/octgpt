@@ -296,6 +296,8 @@ class ReadText:
     self.text_dict = text_csv.groupby('modelId')['description'].apply(list).to_dict()
   
   def __call__(self, uid):
+    if self.flags.get("text_prompt"):
+      return self.flags.text_prompt
     uid = uid.split('/')[-1]
     if uid in self.text_dict:
       texts = self.text_dict[uid]

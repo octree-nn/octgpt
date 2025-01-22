@@ -17,13 +17,15 @@ DATA:
     filelist: data/Objaverse/filelist/objaverse_5w_val.txt
     load_text: *load_text
     text_location: *text_location
+    # shuffle: False
+    # text_prompt: 3D model of a winged female demon
 
     
 MODEL:
   GPT:
     buffer_size: 77
     random_flip: 0.5
-    num_iters: [64, 128, 128, 1024]
+    num_iters: [64, 64, 128, 128]
     condition_type: text
     condition_encoder: clip
     condition_policy: cross_attn
