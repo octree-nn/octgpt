@@ -151,11 +151,11 @@ class OctarSolver(Solver):
       self.generate_step(index)
       # self.generate_vq_step(index)
 
-  def export_results(self, octree_out, index, vq_code=None, image=None, text=None):
+  def export_results(self, octree_out, index, vq_code=None, image=None, text=None, output_dir="results"):
     # export the octree
-    for d in range(self.full_depth + 1, self.depth_stop + 1):
-      utils.export_octree(octree_out, d, os.path.join(
-          self.logdir, f'results/octree_depth{d}'), index=index)
+    # for d in range(self.full_depth + 1, self.depth_stop + 1):
+    #   utils.export_octree(octree_out, d, os.path.join(
+    #       self.logdir, f'{output_dir}/octree_depth{d}'), index=index)
 
     # decode the octree
     for d in range(self.depth_stop, self.depth):
@@ -172,7 +172,7 @@ class OctarSolver(Solver):
     # extract the mesh
     utils.create_mesh(
         output['neural_mpu'],
-        os.path.join(self.logdir, f"results/{index}.obj"),
+        os.path.join(self.logdir, f"{output_dir}/{index}.obj"),
         size=self.FLAGS.SOLVER.resolution,
         level=0.002, clean=True,
         bbmin=-self.FLAGS.SOLVER.sdf_scale,
@@ -181,12 +181,12 @@ class OctarSolver(Solver):
         save_sdf=self.FLAGS.SOLVER.save_sdf)
     # Save the image
     if image is not None:
-      os.makedirs(os.path.join(self.logdir, "results/images"), exist_ok=True)
-      image[0].save(os.path.join(self.logdir, f"results/images/{index}.png"))
+      os.makedirs(os.path.join(self.logdir, f"{output_dir}/images"), exist_ok=True)
+      image[0].save(os.path.join(self.logdir, f"{output_dir}/images/{index}.png"))
     # Save the text:
     if text is not None:
-      os.makedirs(os.path.join(self.logdir, "results/text"), exist_ok=True)
-      with open(os.path.join(self.logdir, f"results/text/{index}.txt"), "w") as f:
+      os.makedirs(os.path.join(self.logdir, f"{output_dir}/text"), exist_ok=True)
+      with open(os.path.join(self.logdir, f"{output_dir}/text/{index}.txt"), "w") as f:
         f.write(text[0] + '\n')
 
   @torch.no_grad()
@@ -204,7 +204,7 @@ class OctarSolver(Solver):
           cfg_scale=self.cfg_scale)
 
     self.export_results(
-      octree_out, index, vq_code,
+      octree_out, index, vq_code, output_dir=f"results/{batch['text'][0]}",
       image=batch['image'] if 'image' in batch else None,
       text=batch['text'] if 'text' in batch else None)
 

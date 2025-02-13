@@ -116,8 +116,8 @@ def plot_hist():
   counts, _ = np.histogram(min_cd_list, bins = bins)
   bar_width = 1
   x = np.arange(len(counts))
-  plt.figure(figsize=(10, 4))
-  plt.bar(x, counts, width=bar_width, color='lightblue', edgecolor='skyblue', linewidth=2, align='center')
+  plt.figure(figsize=(10, 3))
+  plt.bar(x, counts, width=bar_width, color='bisque', edgecolor='darkorange', linewidth=2, align='center')
 
   # 设置x轴刻度和标签
   xticks_positions = np.arange(-0.5, len(counts) + 0.5, 1)
@@ -126,7 +126,7 @@ def plot_hist():
   family = "Linux Biolinum O"
 
   plt.xticks(xticks_positions, xticks_labels, fontproperties=family, size=16)
-  plt.yticks([0, 200, 400, 600], fontproperties=family, size=16)
+  plt.yticks([0, 500], fontproperties=family, size=16)
   # plt.title('RUNOOB hist() Test')
   
   plt.xlabel('Chamfer Distance', family=family, size=24)
