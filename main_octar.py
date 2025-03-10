@@ -204,7 +204,7 @@ class OctarSolver(Solver):
           cfg_scale=self.cfg_scale)
 
     self.export_results(
-      octree_out, index, vq_code, output_dir=f"results/{batch['text'][0]}",
+      octree_out, index, vq_code, output_dir=f"results",
       image=batch['image'] if 'image' in batch else None,
       text=batch['text'] if 'text' in batch else None)
 

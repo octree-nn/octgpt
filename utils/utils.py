@@ -464,6 +464,21 @@ def batch2depth(seq, indices):
   data = data.scatter_(0, indices.unsqueeze(1).expand_as(seq), seq)
   return data
 
+def zorder2raster(zorder, octree, depth_list):
+  xyz = []
+  for d in depth_list:
+    x, y, z, b = octree.xyzb(d)
+    xyz.append(d * 262144 + x * 4096 + y * 64 + z)
+  xyz = torch.cat(xyz)
+  sorted_xyz, indices = torch.sort(xyz, dim=0, descending=False)
+  raster = zorder[indices]
+  return raster, indices
+
+def raster2zorder(raster, indices):
+  zorder = torch.zeros_like(raster)
+  zorder = zorder.scatter_(0, indices.unsqueeze(1).expand_as(raster), raster)
+  return zorder
+
 
 def set_requires_grad(model, bool):
   for p in model.parameters():
