@@ -18,9 +18,7 @@ from utils.distributed import get_rank
 logger = logging.getLogger(__name__)
 
 
-class MAR(nn.Module):
-  """ Masked Autoencoder with VisionTransformer backbone
-  """
+class OctGPT(nn.Module):
 
   def __init__(self,
                num_embed=256,
@@ -31,8 +29,8 @@ class MAR(nn.Module):
                dilation=2,
                buffer_size=64,
                drop_rate=0.1,
-               pos_emb_type="SinPosEmb",
-               norm_type="LayerNorm",
+               pos_emb_type="AbsPosEmb",
+               norm_type="RMSNorm",
                use_rope=True,
                use_checkpoint=True,
                use_swin=True,
@@ -40,14 +38,13 @@ class MAR(nn.Module):
                mask_ratio_min=0.7,
                start_temperature=1.0,
                remask_stage=0.9,
-               num_iters=256,
+               num_iters=[64, 128, 128, 256],
                vqvae_config=None,
                condition_type="none",
                condition_policy="concat",
                context_dim=512,
-               cfg_prob=0.0,
                **kwargs):
-    super(MAR, self).__init__()
+    super(OctGPT, self).__init__()
     self.vqvae_config = vqvae_config
     self.num_embed = num_embed
     self.num_heads = num_heads
@@ -68,14 +65,10 @@ class MAR(nn.Module):
     self.condition_type = condition_type
     self.condition_policy = condition_policy
     self.context_dim = context_dim
-    self.cfg_prob = cfg_prob
     self.split_size = 2  # 0/1 indicates the split signals
     self.num_vq_embed = vqvae_config.embedding_channels
 
-    if vqvae_config.quantizer_type == "group-project":
-      self.vq_size = vqvae_config.embedding_sizes
-      self.vq_groups = vqvae_config.quantizer_group
-    elif vqvae_config.quantizer_type == "bsq":
+    if vqvae_config.quantizer_type == "bsq":
       self.vq_size = 2
       self.vq_groups = vqvae_config.embedding_channels
     else:
@@ -104,13 +97,25 @@ class MAR(nn.Module):
       self._init_weights(self.mask_token)
 
   def _init_blocks(self):
-    self.blocks = OctFormer(
-        channels=self.num_embed, num_blocks=self.num_blocks, num_heads=self.num_heads,
+    self.encoder = OctFormer(
+        channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type), nempty=False,
-        use_checkpoint=self.use_checkpoint, use_swin=self.use_swin, cond_interval=3, use_rope=self.use_rope)
-    self.ln_x = eval(self.norm_type)(self.num_embed)
+        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
+        use_rope=self.use_rope,
+        use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
+        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
+    self.encoder_ln = eval(self.norm_type)(self.num_embed)
+
+    self.decoder = OctFormer(
+        channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
+        patch_size=self.patch_size, dilation=self.dilation,
+        attn_drop=self.drop_rate, proj_drop=self.drop_rate,
+        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
+        use_rope=self.use_rope,
+        use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
+        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
+    self.decoder_ln = eval(self.norm_type)(self.num_embed)
 
   def _init_weights(self, module):
     if isinstance(module, (nn.Linear, nn.Embedding)):
@@ -127,7 +132,6 @@ class MAR(nn.Module):
     # generate token mask
     if mask_rate is None:
       mask_rate = self.mask_ratio_generator.rvs(1)[0]
-    # mask_rate = 1.0
     num_masked_tokens = max(int(np.ceil(seq_len * mask_rate)), 1)
     return self.mask_by_order(num_masked_tokens, orders)
 
@@ -178,12 +182,24 @@ class MAR(nn.Module):
     else:
       context = None
 
-    octreeT = OctreeT(
-        octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
+    x_enc = x.clone()
+    x_enc = x_enc[~mask]
+    octreeT_encoder = OctreeT(
+        octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
         depth_list=depth_list, use_swin=self.use_swin,
         data_mask=mask, buffer_size=self.buffer_size)
-    x_enc = self.forward_blocks(x_enc, octreeT, self.blocks, context)
-    x = self.ln_x(x)
+    x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, context)
+    x_enc = self.encoder_ln(x_enc)
+    x[~mask] = x_enc
+
+    octreeT_decoder = OctreeT(
+        octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
+        depth_list=depth_list, use_swin=self.use_swin,
+        buffer_size=self.buffer_size)
+    x = self.forward_blocks(x, octreeT_decoder, self.decoder, context)
+    x = self.decoder_ln(x)
+    x = x[batch_size * self.buffer_size:]
+
     return x
 
   def forward(self, octree_in, depth_low, depth_high, condition=None, split=None, vqvae=None):
@@ -196,9 +212,6 @@ class MAR(nn.Module):
       cond = self.class_emb(condition)
     elif self.condition_type in ['image', 'text']:
       cond = condition
-    # classifier free guidance
-    cfg_drop = torch.rand(batch_size) < self.cfg_prob
-    cond[cfg_drop] = 0.0
 
     targets_split = split.clone().detach()
     split_token_embeddings = self.split_emb(split)  # (nnum_split, C)
@@ -286,7 +299,7 @@ class MAR(nn.Module):
     return remask
 
   @torch.no_grad()
-  def generate(self, octree, depth_low, depth_high, token_embeddings=None, condition=None, vqvae=None, cfg_scale=None):
+  def generate(self, octree, depth_low, depth_high, token_embeddings=None, condition=None, vqvae=None):
     batch_size = octree.batch_size
     if self.condition_type == "none":
       condition = torch.zeros(batch_size).long().to(octree.device)
@@ -295,8 +308,6 @@ class MAR(nn.Module):
       cond = self.class_emb(condition)
     elif self.condition_type in ['image', 'text']:
       cond = condition
-    if cfg_scale:
-      neg_cond = torch.zeros_like(cond)
 
     if token_embeddings is None:
       token_embeddings = torch.empty((0, self.num_embed), device=octree.device)
@@ -331,10 +342,6 @@ class MAR(nn.Module):
         x = torch.cat([token_embeddings, token_embedding_d], dim=0)
         x = self.forward_model(x, octree, depth_low, d, nnum_split=nnum_split,
                                mask=torch.cat([mask, mask_d]), cond=cond)
-        if cfg_scale:
-          x_neg = self.forward_model(x, octree, depth_low, d, nnum_split=nnum_split,
-                                     mask=torch.cat([mask, mask_d]), cond=neg_cond)
-          x = x_neg + (x - x_neg) * cfg_scale
         x = x[-nnum_d:, :]
 
         # mask ratio for the next round, following MaskGIT and MAGE.
@@ -394,55 +401,3 @@ class MAR(nn.Module):
         vq_code = torch.cat([vq_code, vq_code_d], dim=0)
 
     return octree, vq_code
-
-
-class MAREncoderDecoder(MAR):
-  def _init_blocks(self):
-    self.encoder = OctFormer(
-        channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
-        patch_size=self.patch_size, dilation=self.dilation,
-        attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
-        use_rope=self.use_rope,
-        use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
-        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
-    self.encoder_ln = eval(self.norm_type)(self.num_embed)
-
-    self.decoder = OctFormer(
-        channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
-        patch_size=self.patch_size, dilation=self.dilation,
-        attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
-        use_rope=self.use_rope,
-        use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
-        pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
-    self.decoder_ln = eval(self.norm_type)(self.num_embed)
-
-  def forward_model(self, x, octree, depth_low, depth_high, mask, nnum_split, cond=None):
-    batch_size = octree.batch_size
-    depth_list = list(range(depth_low, depth_high + 1))
-    x, mask = self.add_buffer(x, mask, cond)
-    if self.condition_type in ["image", "text"] and self.condition_policy == "cross_attn":
-      context = cond
-    else:
-      context = None
-
-    x_enc = x.clone()
-    x_enc = x_enc[~mask]
-    octreeT_encoder = OctreeT(
-        octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
-        depth_list=depth_list, use_swin=self.use_swin,
-        data_mask=mask, buffer_size=self.buffer_size)
-    x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, context)
-    x_enc = self.encoder_ln(x_enc)
-    x[~mask] = x_enc
-
-    octreeT_decoder = OctreeT(
-        octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
-        depth_list=depth_list, use_swin=self.use_swin,
-        buffer_size=self.buffer_size)
-    x = self.forward_blocks(x, octreeT_decoder, self.decoder, context)
-    x = self.decoder_ln(x)
-    x = x[batch_size * self.buffer_size:]
-
-    return x

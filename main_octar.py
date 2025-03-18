@@ -8,7 +8,7 @@ from ognn.octreed import OctreeD
 from utils import utils, builder
 from utils.expand_ckpt import expand_checkpoint
 from utils.distributed import get_rank
-from models.mar import MAR, MAREncoderDecoder
+from models.octgpt import OctGPT
 from models.condition import ImageEncoder, TextEncoder
 from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num, snc_synth_id_to_label_13
 from tqdm import tqdm
@@ -24,16 +24,10 @@ class OctarSolver(Solver):
     self.depth_stop = FLAGS.MODEL.depth_stop
     self.full_depth = FLAGS.MODEL.full_depth
     self.condition_type = FLAGS.MODEL.GPT.condition_type
-    self.cfg_scale = FLAGS.MODEL.GPT.cfg_scale \
-      if self.condition_type in ['image', 'text'] else None
-    if self.cfg_scale == 1.0:
-      self.cfg_scale = None
 
   def get_model(self, flags):
     if flags.model_name == "MAR":
-      model = MAR(vqvae_config=flags.VQVAE, **flags.GPT)
-    elif flags.model_name == "MAREncoderDecoder":
-      model = MAREncoderDecoder(vqvae_config=flags.VQVAE, **flags.GPT)
+      model = OctGPT(vqvae_config=flags.VQVAE, **flags.GPT)
     else:
       raise NotImplementedError("Model not implemented")
 
@@ -200,8 +194,7 @@ class OctarSolver(Solver):
       octree_out, vq_code = self.model_module.generate(
           octree=octree_out,
           depth_low=self.full_depth, depth_high=self.depth_stop,
-          vqvae=self.vqvae_module, condition=batch['condition'],
-          cfg_scale=self.cfg_scale)
+          vqvae=self.vqvae_module, condition=batch['condition'])
 
     self.export_results(
       octree_out, index, vq_code, output_dir=f"results",
@@ -220,8 +213,7 @@ class OctarSolver(Solver):
           octree=octree_in,
           depth_low=self.full_depth, depth_high=self.depth_stop,
           token_embeddings=self.model_module.split_emb(split_seq),
-          vqvae=self.vqvae_module, condition=batch['condition'],
-          cfg_scale=self.cfg_scale)
+          vqvae=self.vqvae_module, condition=batch['condition'])
 
     vq_indices = self.vqvae_module.quantizer(vq_code)[1]
     gt_vq_code = self.vqvae_module.extract_code(octree_in)

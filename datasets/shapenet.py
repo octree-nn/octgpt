@@ -8,8 +8,6 @@ import random
 import pandas as pd
 from thsolver import Dataset
 from ocnn.octree import Octree, Points
-from .sketch_utils import Projection_List, Projection_List_zero
-
 
 class TransformShape:
 
@@ -244,34 +242,6 @@ class ReadImage:
   def __call__(self, uid):
     return self.load_image(uid)
 
-
-SKETCH_PER_VIEW = 10
-
-
-class ReadSketch:
-  def __init__(self, flags, elevation_zero: bool = False):
-    self.flags = flags
-    self.image_folder = os.path.join(flags.image_location, 'edge')
-    self.elevation_zero = elevation_zero
-    if self.elevation_zero:
-      self.projection_list = Projection_List_zero
-    else:
-      self.projection_list = Projection_List
-
-  def random_load_image(self, uid):
-    sketch_view_index = np.random.randint(0, 5 * SKETCH_PER_VIEW)
-    img = Image.open(os.path.join(
-        self.image_folder, uid,
-        f'edge_{sketch_view_index // SKETCH_PER_VIEW}_{sketch_view_index % SKETCH_PER_VIEW}.png')).convert('RGB')
-
-    pm = self.projection_list[sketch_view_index // SKETCH_PER_VIEW]
-    projection_matrix = torch.from_numpy(np.expand_dims(pm, axis=0))
-    return img, projection_matrix, sketch_view_index // SKETCH_PER_VIEW
-
-  def __call__(self, uid):
-    return self.random_load_image(uid)
-
-
 class ReadText:
   def __init__(self, flags):
     self.flags = flags
@@ -281,10 +251,6 @@ class ReadText:
       self.read_objaverse()
     else:
       raise ValueError(f'Unsupported dataset: {flags.name}')
-  
-  # def read_shapenet(self):
-  #   text_csv = pd.read_csv(self.flags.text_location)
-  #   self.text_dict = dict(zip(text_csv['modelId'], text_csv['description']))
 
   def read_objaverse(self):
     text_csv = pd.read_csv(self.flags.text_location,
