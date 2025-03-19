@@ -13,7 +13,7 @@ DATA:
     text_location: *text_location
     
 MODEL:
-  GPT:
+  OctGPT:
     buffer_size: 77
     condition_type: text
     condition_encoder: clip

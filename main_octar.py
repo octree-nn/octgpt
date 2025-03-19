@@ -23,11 +23,11 @@ class OctarSolver(Solver):
     self.depth = FLAGS.MODEL.depth
     self.depth_stop = FLAGS.MODEL.depth_stop
     self.full_depth = FLAGS.MODEL.full_depth
-    self.condition_type = FLAGS.MODEL.GPT.condition_type
+    self.condition_type = FLAGS.MODEL.OctGPT.condition_type
 
   def get_model(self, flags):
     if flags.model_name == "OctGPT":
-      model = OctGPT(vqvae_config=flags.VQVAE, **flags.GPT)
+      model = OctGPT(vqvae_config=flags.VQVAE, **flags.OctGPT)
     else:
       raise NotImplementedError("Model not implemented")
 
@@ -38,9 +38,9 @@ class OctarSolver(Solver):
     utils.set_requires_grad(vqvae, False)
 
     if self.condition_type == "image":
-      self.cond_enc = ImageEncoder(flags.GPT.condition_encoder)
+      self.cond_enc = ImageEncoder(flags.OctGPT.condition_encoder)
     elif self.condition_type == "text":
-      self.cond_enc = TextEncoder(flags.GPT.condition_encoder)
+      self.cond_enc = TextEncoder(flags.OctGPT.condition_encoder)
     else:
       self.cond_enc = None
     

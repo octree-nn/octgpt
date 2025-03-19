@@ -10,7 +10,7 @@ DATA:
 
     
 MODEL:
-  GPT:
+  OctGPT:
     buffer_size: 77
     condition_type: none
     condition_encoder: clip

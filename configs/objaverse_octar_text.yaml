@@ -22,7 +22,7 @@ DATA:
 
     
 MODEL:
-  GPT:
+  OctGPT:
     buffer_size: 77
     random_flip: 0.5
     num_iters: [64, 128, 128, 256]

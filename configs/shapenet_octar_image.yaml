@@ -14,7 +14,7 @@ DATA:
     image_location: *image_location
     
 MODEL:
-  GPT:
+  OctGPT:
     buffer_size: 257
     condition_type: image
     condition_encoder: dinov2

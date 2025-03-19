@@ -94,7 +94,7 @@ MODEL:
     quantizer_group: 4
     feature: ND
   
-  GPT:
+  OctGPT:
     num_embed: 768
     num_heads: 8
     num_blocks: 16
