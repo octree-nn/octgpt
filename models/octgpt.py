@@ -31,9 +31,7 @@ class OctGPT(nn.Module):
                drop_rate=0.1,
                pos_emb_type="AbsPosEmb",
                norm_type="RMSNorm",
-               use_rope=True,
                use_checkpoint=True,
-               use_swin=True,
                random_flip=0.0,
                mask_ratio_min=0.7,
                start_temperature=1.0,
@@ -56,8 +54,6 @@ class OctGPT(nn.Module):
     self.pos_emb_type = pos_emb_type
     self.norm_type = norm_type
     self.use_checkpoint = use_checkpoint
-    self.use_swin = use_swin
-    self.use_rope = use_rope
     self.random_flip = random_flip
     self.start_temperature = start_temperature
     self.remask_stage = remask_stage
@@ -101,8 +97,7 @@ class OctGPT(nn.Module):
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
-        use_rope=self.use_rope,
+        nempty=False, use_checkpoint=self.use_checkpoint,
         use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.encoder_ln = eval(self.norm_type)(self.num_embed)
@@ -111,8 +106,7 @@ class OctGPT(nn.Module):
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate,
-        nempty=False, use_swin=self.use_swin, use_checkpoint=self.use_checkpoint,
-        use_rope=self.use_rope,
+        nempty=False, use_checkpoint=self.use_checkpoint,
         use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.decoder_ln = eval(self.norm_type)(self.num_embed)
@@ -186,16 +180,14 @@ class OctGPT(nn.Module):
     x_enc = x_enc[~mask]
     octreeT_encoder = OctreeT(
         octree, x_enc.shape[0], self.patch_size, self.dilation, nempty=False,
-        depth_list=depth_list, use_swin=self.use_swin,
-        data_mask=mask, buffer_size=self.buffer_size)
+        depth_list=depth_list, data_mask=mask, buffer_size=self.buffer_size)
     x_enc = self.forward_blocks(x_enc, octreeT_encoder, self.encoder, context)
     x_enc = self.encoder_ln(x_enc)
     x[~mask] = x_enc
 
     octreeT_decoder = OctreeT(
         octree, x.shape[0], self.patch_size, self.dilation, nempty=False,
-        depth_list=depth_list, use_swin=self.use_swin,
-        buffer_size=self.buffer_size)
+        depth_list=depth_list, buffer_size=self.buffer_size)
     x = self.forward_blocks(x, octreeT_decoder, self.decoder, context)
     x = self.decoder_ln(x)
     x = x[batch_size * self.buffer_size:]

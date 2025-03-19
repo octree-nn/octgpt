@@ -108,8 +108,6 @@ MODEL:
     pos_emb_type: AbsPosEmb
     norm_type: RMSNorm
     use_checkpoint: True
-    use_swin: True
-    use_rope: True
     random_flip: 0.1
     mask_ratio_min: 0.5
     remask_stage: 0.7
