@@ -26,7 +26,7 @@ class OctarSolver(Solver):
     self.condition_type = FLAGS.MODEL.GPT.condition_type
 
   def get_model(self, flags):
-    if flags.model_name == "MAR":
+    if flags.model_name == "OctGPT":
       model = OctGPT(vqvae_config=flags.VQVAE, **flags.GPT)
     else:
       raise NotImplementedError("Model not implemented")
@@ -201,29 +201,6 @@ class OctarSolver(Solver):
       image=batch['image'] if 'image' in batch else None,
       text=batch['text'] if 'text' in batch else None)
 
-  @torch.no_grad()
-  def generate_vq_step(self, index):
-    # forward the model
-    batch = next(self.test_iter)
-    self.batch_to_cuda(batch)
-    octree_in = batch['octree_gt']
-    split_seq = utils.octree2seq(octree_in, self.full_depth, self.depth_stop)
-    with torch.autocast("cuda", enabled=self.use_amp):
-      octree_out, vq_code = self.model_module.generate(
-          octree=octree_in,
-          depth_low=self.full_depth, depth_high=self.depth_stop,
-          token_embeddings=self.model_module.split_emb(split_seq),
-          vqvae=self.vqvae_module, condition=batch['condition'])
-
-    vq_indices = self.vqvae_module.quantizer(vq_code)[1]
-    gt_vq_code = self.vqvae_module.extract_code(octree_in)
-    gt_zq, gt_indices, _ = self.vqvae_module.quantizer(gt_vq_code)
-
-    print(
-        f"{torch.where(vq_indices != gt_indices)[0].shape}/{vq_indices.numel()} indices are different")
-    self.export_results(octree_in, index + 1, gt_zq)
-    self.export_results(octree_out, index, vq_code)
-  
   def load_checkpoint(self):
     ckpt = self.FLAGS.SOLVER.ckpt
     if not ckpt:

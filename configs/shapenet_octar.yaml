@@ -83,7 +83,7 @@ MODEL:
   depth_stop: 6
   vqvae_ckpt: saved_ckpt/vqvae_huge_im5_bsq32_200epoch.pth
   find_unused_parameters: True
-  model_name: MAR
+  model_name: OctGPT
 
   VQVAE:
     name: vqvae_huge
