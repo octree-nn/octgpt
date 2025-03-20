@@ -387,8 +387,8 @@ class OctGPT(nn.Module):
       if d < depth_high:
         split_d = split_d.long()
         octree = seq2octree(octree, split_d, d, d + 1)
-        export_octree(
-          octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
+        # export_octree(
+        #   octree, d + 1, f"mytools/octree/depth{d+1}/", index=get_rank())
       else:
         vq_code = torch.cat([vq_code, vq_code_d], dim=0)
 
