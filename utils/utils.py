@@ -464,6 +464,7 @@ def batch2depth(seq, indices):
   data = data.scatter_(0, indices.unsqueeze(1).expand_as(seq), seq)
   return data
 
+
 def zorder2raster(zorder, octree, depth_list):
   xyz = []
   for d in depth_list:
@@ -473,6 +474,7 @@ def zorder2raster(zorder, octree, depth_list):
   sorted_xyz, indices = torch.sort(xyz, dim=0, descending=False)
   raster = zorder[indices]
   return raster, indices
+
 
 def raster2zorder(raster, indices):
   zorder = torch.zeros_like(raster)
@@ -537,11 +539,23 @@ def octree_copy_unpool(data: torch.Tensor, octree: Octree, depth: int, nempty: b
     out = octree_depad(out, octree, depth+1)
   return out
 
+
 def get_filenames(filelist):
   with open(filelist, 'r') as fid:
-      lines = fid.readlines()
+    lines = fid.readlines()
   filenames = [line.split()[0] for line in lines]
   return filenames
+
+
+def scale_to_unit_cube(mesh):
+  if isinstance(mesh, trimesh.Scene):
+    mesh = mesh.dump().sum()
+
+  vertices = mesh.vertices - mesh.bounding_box.centroid
+  vertices *= 2 / np.max(mesh.bounding_box.extents)
+
+  return trimesh.Trimesh(vertices=vertices, faces=mesh.faces)
+
 
 class TorchRecorder:
   def __init__(self):

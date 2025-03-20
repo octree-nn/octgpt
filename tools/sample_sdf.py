@@ -1,0 +1,219 @@
+import trimesh
+import mesh2sdf
+import os
+import sys
+import ocnn
+import numpy as np
+import torch
+import diso
+import mcubes
+import traceback
+from functools import partial
+import torchcumesh2sdf
+import multiprocessing as mp
+import objaverse.xl as oxl
+from tqdm import tqdm
+import pandas as pd
+import glob
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.utils import scale_to_unit_cube
+# os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+
+device_list = list(range(8))
+mesh_scale = 0.8
+size = 256
+level = 2 / size
+band = 0.10
+batch_size = 256
+num_samples = 200000
+num_processes = 2
+mode = "cuda"
+
+def check_folder(filenames: list):
+  for filename in filenames:
+    folder = os.path.dirname(filename)
+    if not os.path.exists(folder):
+      os.makedirs(folder)
+
+def sample_pts(mesh, filename_pts):
+  points, idx = trimesh.sample.sample_surface(mesh, num_samples)
+  normals = mesh.face_normals[idx]
+  np.savez(filename_pts, points=points.astype(np.float16),
+          normals=normals.astype(np.float16))
+  return {'points': points, 'normals': normals}
+
+
+def sample_sdf(sdf, filename_out, pts=None):
+  # constants
+  depth, full_depth = 8, 4
+  sample_num = 4  # number of samples in each octree node 也就是文中说的在每个八叉树的节点，采4个点并计算对应的sdf值。
+  grid = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1],
+                  [1, 0, 0], [1, 0, 1], [1, 1, 0], [1, 1, 1]])
+  grid = torch.tensor(grid, device=sdf.device)
+
+  points = pts['points'].astype(np.float32)
+  normals = pts['normals'].astype(np.float32)
+
+  # build octree 这里构建八叉树时输入的点云是[-1,1]内连续的，也就是说不受分辨率的影响
+  points = ocnn.octree.Points(torch.from_numpy(
+      points), torch.from_numpy(normals)).to(sdf.device)
+  octree = ocnn.octree.Octree(depth=depth, full_depth=full_depth)
+  octree.build_octree(points)
+
+  # sample points and grads according to the xyz
+  xyzs, grads, sdfs, valids = [], [], [], []
+  for d in range(full_depth, depth + 1):
+    xyzb = octree.xyzb(d)
+    x, y, z, b = xyzb
+    xyz = torch.stack((x, y, z), dim=1).float()
+
+    # sample k points in each octree node
+    xyz = xyz.unsqueeze(
+        1) + torch.rand(xyz.shape[0], sample_num, 3, device=sdf.device)
+    xyz = xyz.view(-1, 3)                  # (N, 3)
+    # normalize to [0, 2^sdf_depth] 相当于将坐标放大到[0,128]，128是sdf采样的分辨率
+    xyz = xyz * (size / (2 ** d))
+    # remove out-of-bound points
+    xyz = xyz[(xyz < (size - 1)).all(dim=1)]
+    xyzs.append(xyz)
+
+    # interpolate the sdf values
+    xyzi = torch.floor(xyz)                # the integer part (N, 3)
+    corners = xyzi.unsqueeze(1) + grid     # (N, 8, 3)
+    coordsf = xyz.unsqueeze(1) - corners   # (N, 8, 3), in [-1.0, 1.0]
+    weights = (1 - coordsf.abs()).prod(dim=-1)  # (N, 8, 1)
+    corners = corners.long().view(-1, 3)
+    x, y, z = corners[:, 0], corners[:, 1], corners[:, 2]
+    s = sdf[x, y, z].view(-1, 8)
+    sw = torch.sum(s * weights, dim=1)
+    sdfs.append(sw)
+
+    # test if sdf is in range
+    valid = (s.abs() < band * 2).all(dim=1)
+    valids.append(valid)
+
+    # calc the gradient
+    gx = s[:, 4] - s[:, 0] + s[:, 5] - s[:, 1] + \
+        s[:, 6] - s[:, 2] + s[:, 7] - s[:, 3]  # noqa
+    gy = s[:, 2] - s[:, 0] + s[:, 3] - s[:, 1] + \
+        s[:, 6] - s[:, 4] + s[:, 7] - s[:, 5]  # noqa
+    gz = s[:, 1] - s[:, 0] + s[:, 3] - s[:, 2] + \
+        s[:, 5] - s[:, 4] + s[:, 7] - s[:, 6]  # noqa
+    grad = torch.stack([gx, gy, gz], dim=-1)
+    norm = torch.sqrt(torch.sum(grad ** 2, dim=-1, keepdims=True))
+    grad = grad / (norm + 1.0e-8)
+    grads.append(grad)
+
+  # concat the results
+  xyzs = torch.cat(xyzs, dim=0)
+  points = (xyzs / (size/2) - 1)
+  grads = torch.cat(grads, dim=0)
+  sdfs = torch.cat(sdfs, dim=0)
+  valids = torch.cat(valids, dim=0)
+
+  # remove invalid points
+  # points = points[valids]
+  # grads = grads[valids]
+  # sdfs = sdfs[valids]
+
+  # save results
+  random_idx = torch.randperm(points.shape[0])[:min(400000, points.shape[0])]
+  points = points[random_idx].cpu().numpy().astype(np.float16)
+  grads = grads[random_idx].cpu().numpy().astype(np.float16)
+  sdfs = sdfs[random_idx].cpu().numpy().astype(np.float16)
+  np.savez(filename_out, points=points, grad=grads, sdf=sdfs)
+
+  # visualize
+  # surf_points = points - sdfs.reshape(-1, 1) * grads
+  # pointcloud = trimesh.PointCloud(surf_points)
+  # pointcloud.export("mytools/sdf.ply")
+
+
+def get_sdf(mesh, filename_obj):
+  vertices = mesh.vertices
+  # run mesh2sdf
+  voxel_sdf, mesh_new = mesh2sdf.compute(
+      vertices, mesh.faces, size, fix=True, level=level, return_mesh=True)
+  mesh_new.export(filename_obj)
+  return mesh_new, voxel_sdf
+
+
+def get_sdf_cu(mesh, device, filename_obj):
+  tris = np.array(mesh.triangles, dtype=np.float32, subok=False)
+  tris = torch.tensor(tris, dtype=torch.float32).to(device)
+  tris = (tris + 1.0) / 2.0
+  voxel_sdf = torchcumesh2sdf.get_sdf(tris, size, band, B=batch_size)
+  voxel_sdf = torch.clamp(voxel_sdf, -1.0, 1.0)
+  vertices, faces = diso.DiffMC().to(device).forward(voxel_sdf, isovalue=level)
+  mcubes.export_obj(vertices.cpu().numpy(),
+                    faces.cpu().numpy(), filename_obj)
+  torchcumesh2sdf.free_cached_memory()
+  torch.cuda.empty_cache()
+  return mesh, voxel_sdf
+
+def process(index, filenames, load_paths, save_paths):
+  filename = filenames[index]
+  load_path = load_paths[index]
+  save_path = save_paths[index]
+
+  filename_input = load_path
+  filename_obj = os.path.join(save_path, "mesh.obj")
+  filename_pointcloud = os.path.join(save_path, 'pointcloud.npz')
+  filename_sdf = os.path.join(save_path, 'sdf.npz')
+  if os.path.exists(filename_sdf) and os.path.exists(filename_pointcloud):
+    print(f"{filename} already exists")
+    return
+
+  try:
+    mesh = trimesh.load(filename_input, force='mesh')
+    mesh = scale_to_unit_cube(mesh)
+    mesh.vertices *= mesh_scale
+  except:
+    print(f"Trimesh load mesh {filename} error")
+    return
+
+  check_folder([filename_obj, filename_pointcloud, filename_sdf])
+  device = torch.device(f'cuda:{device_list[index % len(device_list)]}')
+  try:
+    if mode == "cuda":
+      mesh, voxel_sdf = get_sdf_cu(mesh, device, filename_obj)
+    elif mode == "cpu":
+      mesh, voxel_sdf = get_sdf(mesh, filename_obj)
+      voxel_sdf = torch.tensor(voxel_sdf)
+    pointcloud = sample_pts(mesh, filename_pointcloud)
+    sample_sdf(voxel_sdf, filename_sdf, pointcloud)
+  except:
+    print(f"{filename} Mesh2SDF error")
+    with open('mytools/error.txt', 'a+') as f:
+      f.write(f"{filename} Mesh2SDF error\n")
+      f.write(traceback.format_exc() + "\n")
+    torchcumesh2sdf.free_cached_memory()
+    torch.cuda.empty_cache()
+    return
+  print(f"Mesh {index}/{len(filenames)} {filename} done")
+  
+def get_objaverse_metadata():
+  load_path = f'data/Objaverse/ObjaverseXL_github'
+  save_path = f'data/Objaverse/ObjaverseXL_github/repair'
+  metadata_path = 'data/Objaverse/filelist/ObjaverseXL_github.csv'
+  metadata = pd.read_csv(metadata_path)
+  load_paths, save_paths, filenames = [], [], []
+  for local_path, filename in zip(metadata['local_path'], metadata['sha256']):
+    if not isinstance(local_path, str):
+      continue
+    filenames.append(filename)
+    load_paths.append(os.path.join(load_path, local_path))
+    save_paths.append(os.path.join(save_path, f"{filename}"))
+  return filenames, load_paths, save_paths
+
+
+if __name__ == "__main__":
+  filenames, load_paths, save_paths = get_objaverse_metadata()
+  indices = list(range(len(filenames)))
+  if num_processes > 1:
+    func = partial(process, filenames=filenames, load_paths=load_paths, save_paths=save_paths)
+    with mp.Pool(processes=num_processes) as pool:
+      list(tqdm(pool.imap(func, indices), total=len(filenames)))
+  else:
+    for i in range(len(filenames)):
+      process(i, filenames[i], load_paths[i], save_paths[i])
