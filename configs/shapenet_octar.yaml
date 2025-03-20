@@ -111,7 +111,7 @@ MODEL:
     random_flip: 0.1
     mask_ratio_min: 0.5
     remask_stage: 0.7
-    start_temperature: [1.0, 1.2, 0.5, 0.5]
+    start_temperature: [1.2, 1.3, 0.5, 0.5]
     num_iters: [64, 128, 128, 256]
     condition_type: none
     condition_encoder: vit
