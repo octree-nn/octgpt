@@ -19,14 +19,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import scale_to_unit_cube
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 
-device_list = list(range(8))
+device_list = [0, 1, 2, 3, 4, 5, 6, 7]
 mesh_scale = 0.8
 size = 256
-level = 2 / size
-band = 0.10
+level = 1 / size
+band = 0.15
 batch_size = 256
 num_samples = 200000
-num_processes = 2
+num_processes = 24
 mode = "cuda"
 
 def check_folder(filenames: list):
@@ -144,9 +144,9 @@ def get_sdf_cu(mesh, device, filename_obj):
   tris = (tris + 1.0) / 2.0
   voxel_sdf = torchcumesh2sdf.get_sdf(tris, size, band, B=batch_size)
   voxel_sdf = torch.clamp(voxel_sdf, -1.0, 1.0)
-  vertices, faces = diso.DiffMC().to(device).forward(voxel_sdf, isovalue=level)
-  mcubes.export_obj(vertices.cpu().numpy(),
-                    faces.cpu().numpy(), filename_obj)
+  # vertices, faces = diso.DiffMC().to(device).forward(voxel_sdf, isovalue=level)
+  # mcubes.export_obj(vertices.cpu().numpy(),
+  #                   faces.cpu().numpy(), filename_obj)
   torchcumesh2sdf.free_cached_memory()
   torch.cuda.empty_cache()
   return mesh, voxel_sdf
@@ -155,6 +155,9 @@ def process(index, filenames, load_paths, save_paths):
   filename = filenames[index]
   load_path = load_paths[index]
   save_path = save_paths[index]
+  if not os.path.exists(load_path):
+    print(f"{filename} not exists")
+    return
 
   filename_input = load_path
   filename_obj = os.path.join(save_path, "mesh.obj")
@@ -169,33 +172,35 @@ def process(index, filenames, load_paths, save_paths):
     mesh = scale_to_unit_cube(mesh)
     mesh.vertices *= mesh_scale
   except:
+    os.remove(filename_input)
     print(f"Trimesh load mesh {filename} error")
     return
 
   check_folder([filename_obj, filename_pointcloud, filename_sdf])
   device = torch.device(f'cuda:{device_list[index % len(device_list)]}')
-  try:
-    if mode == "cuda":
-      mesh, voxel_sdf = get_sdf_cu(mesh, device, filename_obj)
-    elif mode == "cpu":
-      mesh, voxel_sdf = get_sdf(mesh, filename_obj)
-      voxel_sdf = torch.tensor(voxel_sdf)
-    pointcloud = sample_pts(mesh, filename_pointcloud)
-    sample_sdf(voxel_sdf, filename_sdf, pointcloud)
-  except:
-    print(f"{filename} Mesh2SDF error")
-    with open('mytools/error.txt', 'a+') as f:
-      f.write(f"{filename} Mesh2SDF error\n")
-      f.write(traceback.format_exc() + "\n")
-    torchcumesh2sdf.free_cached_memory()
-    torch.cuda.empty_cache()
-    return
+  # device = torch.device('cuda:0')
+  # try:
+  if mode == "cuda":
+    mesh, voxel_sdf = get_sdf_cu(mesh, device, filename_obj)
+  elif mode == "cpu":
+    mesh, voxel_sdf = get_sdf(mesh, filename_obj)
+    voxel_sdf = torch.tensor(voxel_sdf)
+  pointcloud = sample_pts(mesh, filename_pointcloud)
+  sample_sdf(voxel_sdf, filename_sdf, pointcloud)
+  # except:
+  #   print(f"{filename} Mesh2SDF error")
+  #   with open('mytools/error.txt', 'a+') as f:
+  #     f.write(f"{filename} Mesh2SDF error\n")
+  #     f.write(traceback.format_exc() + "\n")
+  #   torchcumesh2sdf.free_cached_memory()
+  #   torch.cuda.empty_cache()
+  #   return
   print(f"Mesh {index}/{len(filenames)} {filename} done")
   
 def get_objaverse_metadata():
-  load_path = f'data/Objaverse/ObjaverseXL_github'
-  save_path = f'data/Objaverse/ObjaverseXL_github/repair'
-  metadata_path = 'data/Objaverse/filelist/ObjaverseXL_github.csv'
+  load_path = f'data/Objaverse/ObjaverseXL_sketchfab'
+  save_path = f'data/Objaverse/ObjaverseXL_sketchfab/repair'
+  metadata_path = 'data/Objaverse/filelist/ObjaverseXL_sketchfab.csv'
   metadata = pd.read_csv(metadata_path)
   load_paths, save_paths, filenames = [], [], []
   for local_path, filename in zip(metadata['local_path'], metadata['sha256']):
@@ -216,4 +221,4 @@ if __name__ == "__main__":
       list(tqdm(pool.imap(func, indices), total=len(filenames)))
   else:
     for i in range(len(filenames)):
-      process(i, filenames[i], load_paths[i], save_paths[i])
+      process(i, filenames, load_paths, save_paths)

@@ -1,5 +1,5 @@
 BASE:
-  - configs/objaverse_octar_text.yaml
+  - configs/Objaverse/objaverse_octar_text.yaml
 
 DATA:
   train:

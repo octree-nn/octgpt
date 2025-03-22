@@ -1,22 +1,24 @@
 BASE:
-  - configs/shapenet_octar.yaml
+  - configs/ShapeNet/shapenet_octar.yaml
 
 DATA:
   train:
     name: &name objaverse
     points_scale: &points_scale 1.0
-    location: &location data/Objaverse/objaverse_5w
-    filelist: &filelist data/Objaverse/filelist/objaverse_5w_train.txt
+    location: &location data/Objaverse/ObjaverseXL_sketchfab/repair
+    filelist: &filelist data/Objaverse/filelist/ObjaverseXL_sketchfab.txt
     load_text: &load_text True
-    text_location: &text_location data/Objaverse/filelist/Cap3D_automated_Objaverse_highquality.csv
+    text_location: &text_location data/Objaverse/filelist/ObjaverseXL_sketchfab.csv
+    caption: &caption trellis
 
   test:
     name: *name
     points_scale: *points_scale
     location: *location
-    filelist: data/Objaverse/filelist/objaverse_5w_val.txt
+    filelist: data/Objaverse/filelist/ObjaverseXL_sketchfab_test.txt
     load_text: *load_text
     text_location: *text_location
+    caption: *caption
     shuffle: False
     # text_prompt: 3D model of a winged female demon
 

@@ -1,5 +1,5 @@
 BASE:
-  - configs/shapenet_octar.yaml
+  - configs/ShapeNet/shapenet_octar.yaml
 
 DATA:
   train:

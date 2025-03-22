@@ -4,7 +4,7 @@ import glob
 from tqdm import tqdm
 from collections import defaultdict
 
-def get_local_path_Objaverse_github():
+def get_local_path_objaverse_github():
   load_path = f'data/Objaverse/ObjaverseXL_github'
   metadata_path = 'data/Objaverse/ObjaverseXL_github/metadata.csv'
   metadata = pd.read_csv(metadata_path)
@@ -36,6 +36,18 @@ def get_local_path_Objaverse_github():
     metadata.loc[i, "local_path"] = local_path
   metadata.to_csv("data/Objaverse/filelist/ObjaverseXL_github.csv", index=False)
 
+def get_objaverse_filelist():
+  load_path = f'data/Objaverse/ObjaverseXL_sketchfab/repair'
+  metadata_path = 'data/Objaverse/filelist/ObjaverseXL_sketchfab.csv'
+  metadata = pd.read_csv(metadata_path)
+  filelist = []
+  for filename in metadata['sha256']:
+    if os.path.exists(os.path.join(load_path, f"{filename}/sdf.npz")) and os.path.exists(os.path.join(load_path, f"{filename}/pointcloud.npz")):
+      filelist.append(filename)
+
+  with open("data/Objaverse/filelist/ObjaverseXL_sketchfab.txt", "w") as f:
+    f.writelines([f"{filename}\n" for filename in filelist])
 
 if __name__ == "__main__":
-  get_local_path_Objaverse_github()
+  # get_local_path_objaverse_github()
+  get_objaverse_filelist()

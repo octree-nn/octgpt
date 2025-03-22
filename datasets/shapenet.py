@@ -5,9 +5,11 @@ import torchvision.transforms as transforms
 import numpy as np
 from PIL import Image
 import random
+import json
 import pandas as pd
 from thsolver import Dataset
 from ocnn.octree import Octree, Points
+
 
 class TransformShape:
 
@@ -181,8 +183,6 @@ class ReadFile:
 
   def __init__(self, flags):
     self.flags = flags
-    if flags.get("load_sketch"):
-      self.load_sketch = ReadSketch(flags)
     if flags.get("load_image"):
       self.load_image = ReadImage(flags)
     if flags.get("load_text"):
@@ -242,6 +242,7 @@ class ReadImage:
   def __call__(self, uid):
     return self.load_image(uid)
 
+
 class ReadText:
   def __init__(self, flags):
     self.flags = flags
@@ -253,14 +254,24 @@ class ReadText:
       raise ValueError(f'Unsupported dataset: {flags.name}')
 
   def read_objaverse(self):
-    text_csv = pd.read_csv(self.flags.text_location,
-                           header=None, names=["uid", "text"])
-    self.text_dict = dict(zip(text_csv['uid'], text_csv['text']))
+    if self.flags.caption == "cap3d":
+      text_csv = pd.read_csv(self.flags.text_location,
+                             header=None, names=["uid", "text"])
+      self.text_dict = dict(zip(text_csv['uid'], text_csv['text']))
+    elif self.flags.caption == "trellis":
+      text_csv = pd.read_csv(self.flags.text_location)
+      self.text_dict = dict(zip(text_csv['sha256'], text_csv['captions']))
+      for uid, captions in self.text_dict.items():
+        if isinstance(captions, str):
+          self.text_dict[uid] = json.loads(captions)
+    else:
+      raise ValueError(f'Unsupported caption style: {self.flags.caption}')
 
   def read_text2shape(self):
     text_csv = pd.read_csv(self.flags.text_location)
-    self.text_dict = text_csv.groupby('modelId')['description'].apply(list).to_dict()
-  
+    self.text_dict = text_csv.groupby(
+        'modelId')['description'].apply(list).to_dict()
+
   def __call__(self, uid):
     if self.flags.get("text_prompt"):
       return self.flags.text_prompt
@@ -269,14 +280,10 @@ class ReadText:
       texts = self.text_dict[uid]
       if isinstance(texts, str):
         return texts
-      if len(texts) == 0:
-        return "A 3D model."
-      text = random.choice(texts)
-      if not isinstance(text, str):
-        return "A 3D model."
-      return text
-    else:
-      return "A 3D model."
+      elif isinstance(texts, list) and len(texts) > 0:
+        return random.choice(texts)
+
+    return "A 3D model."
 
 
 def collate_func(batch):

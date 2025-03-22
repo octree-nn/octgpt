@@ -1,5 +1,5 @@
 BASE:
-  - configs/shapenet_vae.yaml
+  - configs/ShapeNet/shapenet_vae.yaml
 
 SOLVER:
   logdir: logs/room/room
