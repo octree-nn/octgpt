@@ -218,7 +218,7 @@ if __name__ == "__main__":
   if num_processes > 1:
     func = partial(process, filenames=filenames, load_paths=load_paths, save_paths=save_paths)
     with mp.Pool(processes=num_processes) as pool:
-      list(tqdm(pool.imap(func, indices), total=len(filenames)))
+      list(tqdm(pool.imap_unordered(func, indices), total=len(filenames)))
   else:
     for i in range(len(filenames)):
       process(i, filenames, load_paths, save_paths)

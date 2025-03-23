@@ -1,19 +1,27 @@
 BASE:
   - configs/ShapeNet/shapenet_vae.yaml
 
+SOLVER:
+  max_epoch: 100
+  test_every_epoch: 1
 
 DATA:
   train:
     name: &name objaverse
     points_scale: &points_scale 1.0  # the scale of point clouds
-    location: &location data/Objaverse/objaverse_5w
-    filelist: data/Objaverse/filelist/objaverse_5w_train.txt
-    tsdf: &tsdf 0.15
+    location: &location data/Objaverse/ObjaverseXL_sketchfab/repair
+    filelist: data/Objaverse/filelist/ObjaverseXL_sketchfab_train.txt
+    # tsdf: &tsdf 0.05
+    sdf_file_num: &sdf_file_num 0
 
 
   test:
     name: *name
     points_scale: *points_scale
     location: *location
-    filelist: data/Objaverse/filelist/objaverse_5w_val.txt
-    tsdf: *tsdf
+    filelist: data/Objaverse/filelist/ObjaverseXL_sketchfab_test.txt
+    # tsdf: *tsdf
+    sdf_file_num: *sdf_file_num
+
+MODEL:
+  rnd_flip: 0.2

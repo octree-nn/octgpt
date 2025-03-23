@@ -79,7 +79,7 @@ DATA:
 
 
 MODEL:
-  name: vae
+  name: vqvae_huge
 
   in_channels: 4
   embedding_sizes: 128
@@ -92,3 +92,4 @@ MODEL:
 LOSS:
   name: shape
   vae_weight: 1.0
+  reg_loss_type: sdf_reg_loss

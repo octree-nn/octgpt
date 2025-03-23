@@ -31,9 +31,10 @@ class VAESolver(Solver):
     output['vae_loss'] = self.FLAGS.LOSS.vae_weight * model_out['vae_loss']
     return output
 
-  def compute_shape_loss(self, batch, model_out):
+  def compute_shape_loss(self, batch, model_out, reg_loss_type):
     wo = [1.0] * 8 + [0.1] * 3  # lower weights for deep layers
-    output = ognn.loss.shapenet_loss(batch, model_out, wo=wo)
+    output = ognn.loss.shapenet_loss(
+        batch, model_out, reg_loss_type=reg_loss_type, wo=wo)
     output['vae_loss'] = self.FLAGS.LOSS.vae_weight * model_out['vae_loss']
     return output
 
@@ -63,9 +64,9 @@ class VAESolver(Solver):
     output['vae_loss'] = flags.vae_weight * model_out['vae_loss']
     return output
 
-  def compute_loss(self, batch, model_out):
+  def compute_loss(self, batch, model_out, reg_loss_type):
     if self.FLAGS.LOSS.name == 'shape':
-      return self.compute_shape_loss(batch, model_out)
+      return self.compute_shape_loss(batch, model_out, reg_loss_type)
     elif self.FLAGS.LOSS.name == 'room':
       return self.compute_scene_loss(batch, model_out)
     else:
@@ -77,7 +78,7 @@ class VAESolver(Solver):
     octree_gt = OctreeD(batch['octree_gt'])
     model_out = self.model(octree_in, octree_gt, batch['pos'])
 
-    output = self.compute_loss(batch, model_out)
+    output = self.compute_loss(batch, model_out, self.FLAGS.LOSS.reg_loss_type)
     losses = [val for key, val in output.items() if 'loss' in key]
     output['loss'] = torch.sum(torch.stack(losses))
     return output
