@@ -17,17 +17,20 @@ import pandas as pd
 import glob
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import scale_to_unit_cube
-# os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 
-device_list = [0, 1, 2, 3, 4, 5, 6, 7]
+device_list = [0, 1, 2, 3]
 mesh_scale = 0.8
 size = 256
 level = 1 / size
-band = 0.15
+band = 0.05
 batch_size = 256
 num_samples = 200000
-num_processes = 24
 mode = "cuda"
+debug = True
+if debug:
+  num_processes = 1
+else:
+  num_processes = 16
 
 def check_folder(filenames: list):
   for filename in filenames:
@@ -89,7 +92,7 @@ def sample_sdf(sdf, filename_out, pts=None):
     sdfs.append(sw)
 
     # test if sdf is in range
-    valid = (s.abs() < band * 2).all(dim=1)
+    valid = (s.abs() <= band).all(dim=1)
     valids.append(valid)
 
     # calc the gradient
@@ -112,9 +115,12 @@ def sample_sdf(sdf, filename_out, pts=None):
   valids = torch.cat(valids, dim=0)
 
   # remove invalid points
-  # points = points[valids]
-  # grads = grads[valids]
-  # sdfs = sdfs[valids]
+  if mode == "cuda":
+    # points = points[valids]
+    # grads = grads[valids]
+    # sdfs = sdfs[valids]
+    sdfs[~valids] = (sdfs[~valids] > 0).float() * band
+    grads[~valids] = 0.0
 
   # save results
   random_idx = torch.randperm(points.shape[0])[:min(400000, points.shape[0])]
@@ -124,9 +130,13 @@ def sample_sdf(sdf, filename_out, pts=None):
   np.savez(filename_out, points=points, grad=grads, sdf=sdfs)
 
   # visualize
-  # surf_points = points - sdfs.reshape(-1, 1) * grads
-  # pointcloud = trimesh.PointCloud(surf_points)
-  # pointcloud.export("mytools/sdf.ply")
+  if debug:
+    valids = valids[random_idx].cpu().numpy()
+    surf_points = points[valids] - sdfs[valids].reshape(-1, 1) * grads[valids]
+    pointcloud = trimesh.PointCloud(surf_points)
+    pointcloud.export("mytools/sdf_surf.ply")
+    pointcloud = trimesh.PointCloud(points)
+    pointcloud.export("mytools/sdf.ply")
 
 
 def get_sdf(mesh, filename_obj):
@@ -134,7 +144,8 @@ def get_sdf(mesh, filename_obj):
   # run mesh2sdf
   voxel_sdf, mesh_new = mesh2sdf.compute(
       vertices, mesh.faces, size, fix=True, level=level, return_mesh=True)
-  mesh_new.export(filename_obj)
+  if debug:
+    mesh_new.export(filename_obj)
   return mesh_new, voxel_sdf
 
 
@@ -143,10 +154,10 @@ def get_sdf_cu(mesh, device, filename_obj):
   tris = torch.tensor(tris, dtype=torch.float32).to(device)
   tris = (tris + 1.0) / 2.0
   voxel_sdf = torchcumesh2sdf.get_sdf(tris, size, band, B=batch_size)
-  voxel_sdf = torch.clamp(voxel_sdf, -1.0, 1.0)
-  # vertices, faces = diso.DiffMC().to(device).forward(voxel_sdf, isovalue=level)
-  # mcubes.export_obj(vertices.cpu().numpy(),
-  #                   faces.cpu().numpy(), filename_obj)
+  if debug:
+    vertices, faces = diso.DiffMC().to(device).forward(voxel_sdf, isovalue=level)
+    mcubes.export_obj(vertices.cpu().numpy(),
+                      faces.cpu().numpy(), filename_obj)
   torchcumesh2sdf.free_cached_memory()
   torch.cuda.empty_cache()
   return mesh, voxel_sdf
@@ -177,8 +188,8 @@ def process(index, filenames, load_paths, save_paths):
     return
 
   check_folder([filename_obj, filename_pointcloud, filename_sdf])
-  device = torch.device(f'cuda:{device_list[index % len(device_list)]}')
-  # device = torch.device('cuda:0')
+  # device = torch.device(f'cuda:{device_list[index % len(device_list)]}')
+  device = torch.device('cuda:1')
   # try:
   if mode == "cuda":
     mesh, voxel_sdf = get_sdf_cu(mesh, device, filename_obj)
@@ -199,12 +210,16 @@ def process(index, filenames, load_paths, save_paths):
   
 def get_objaverse_metadata():
   load_path = f'data/Objaverse/ObjaverseXL_sketchfab'
-  save_path = f'data/Objaverse/ObjaverseXL_sketchfab/repair'
+  save_path = f'data/Objaverse/ObjaverseXL_sketchfab/repair_test'
+  existing_files = set(glob.glob(f"{save_path}/*/*.npz"))
   metadata_path = 'data/Objaverse/filelist/ObjaverseXL_sketchfab.csv'
   metadata = pd.read_csv(metadata_path)
   load_paths, save_paths, filenames = [], [], []
   for local_path, filename in zip(metadata['local_path'], metadata['sha256']):
     if not isinstance(local_path, str):
+      continue
+    if os.path.join(save_path, f"{filename}", "sdf.npz") in existing_files and \
+       os.path.join(save_path, f"{filename}", "pointcloud.npz") in existing_files:
       continue
     filenames.append(filename)
     load_paths.append(os.path.join(load_path, local_path))

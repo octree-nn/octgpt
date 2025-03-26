@@ -10,7 +10,7 @@ DATA:
     name: &name objaverse
     points_scale: &points_scale 1.0  # the scale of point clouds
     location: &location data/Objaverse/ObjaverseXL_sketchfab/repair
-    filelist: data/Objaverse/filelist/ObjaverseXL_sketchfab_train.txt
+    filelist: data/Objaverse/filelist/ObjaverseXL_sketchfab.txt
     # tsdf: &tsdf 0.05
     sdf_file_num: &sdf_file_num 0
 

@@ -24,3 +24,7 @@ kornia
 einops
 pandas
 transformers
+diso
+objaverse
+pymcubes
+git+https://github.com/eliphatfs/cumesh2sdf.git
