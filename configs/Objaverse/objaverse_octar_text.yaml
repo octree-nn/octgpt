@@ -5,7 +5,7 @@ DATA:
   train:
     name: &name objaverse
     points_scale: &points_scale 1.0
-    location: &location data/Objaverse/ObjaverseXL_sketchfab/repair
+    location: &location data/Objaverse/ObjaverseXL_sketchfab/repair_cpu
     filelist: &filelist data/Objaverse/filelist/ObjaverseXL_sketchfab.txt
     load_text: &load_text True
     text_location: &text_location data/Objaverse/filelist/ObjaverseXL_sketchfab.csv

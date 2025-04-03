@@ -15,22 +15,29 @@ import objaverse.xl as oxl
 from tqdm import tqdm
 import pandas as pd
 import glob
+import argparse
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import scale_to_unit_cube
 
-device_list = [0, 1, 2, 3]
-mesh_scale = 0.8
-size = 256
-level = 1 / size
-band = 0.05
-batch_size = 256
-num_samples = 200000
-mode = "cuda"
-debug = True
-if debug:
-  num_processes = 1
+parser = argparse.ArgumentParser()
+parser.add_argument('--dataset', default="ShapeNet", type=str)
+parser.add_argument('--mode', default="cpu", type=str)
+parser.add_argument('--debug', action='store_true')
+parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--mesh_scale', type=float, default=0.8)
+# parser.add_argument('--device_list', type=str, default="0,1,2,3")
+parser.add_argument('--size', type=int, default=256)
+parser.add_argument('--level', type=float, default=1/256)
+parser.add_argument('--band', type=float, default=0.05)
+parser.add_argument('--num_samples', type=int, default=200000)
+parser.add_argument('--num_processes', type=int, default=32)
+args = parser.parse_args()
+
+if args.debug:
+  args.num_processes = 1
 else:
-  num_processes = 16
+  args.num_processes = 32
+
 
 def check_folder(filenames: list):
   for filename in filenames:
@@ -39,7 +46,7 @@ def check_folder(filenames: list):
       os.makedirs(folder)
 
 def sample_pts(mesh, filename_pts):
-  points, idx = trimesh.sample.sample_surface(mesh, num_samples)
+  points, idx = trimesh.sample.sample_surface(mesh, args.num_samples)
   normals = mesh.face_normals[idx]
   np.savez(filename_pts, points=points.astype(np.float16),
           normals=normals.astype(np.float16))
@@ -75,9 +82,9 @@ def sample_sdf(sdf, filename_out, pts=None):
         1) + torch.rand(xyz.shape[0], sample_num, 3, device=sdf.device)
     xyz = xyz.view(-1, 3)                  # (N, 3)
     # normalize to [0, 2^sdf_depth] 相当于将坐标放大到[0,128]，128是sdf采样的分辨率
-    xyz = xyz * (size / (2 ** d))
+    xyz = xyz * (args.size / (2 ** d))
     # remove out-of-bound points
-    xyz = xyz[(xyz < (size - 1)).all(dim=1)]
+    xyz = xyz[(xyz < (args.size - 1)).all(dim=1)]
     xyzs.append(xyz)
 
     # interpolate the sdf values
@@ -92,7 +99,7 @@ def sample_sdf(sdf, filename_out, pts=None):
     sdfs.append(sw)
 
     # test if sdf is in range
-    valid = (s.abs() <= band).all(dim=1)
+    valid = (s.abs() <= args.band).all(dim=1)
     valids.append(valid)
 
     # calc the gradient
@@ -109,17 +116,17 @@ def sample_sdf(sdf, filename_out, pts=None):
 
   # concat the results
   xyzs = torch.cat(xyzs, dim=0)
-  points = (xyzs / (size/2) - 1)
+  points = (xyzs / (args.size/2) - 1)
   grads = torch.cat(grads, dim=0)
   sdfs = torch.cat(sdfs, dim=0)
   valids = torch.cat(valids, dim=0)
 
   # remove invalid points
-  if mode == "cuda":
+  if args.mode == "cuda":
     # points = points[valids]
     # grads = grads[valids]
     # sdfs = sdfs[valids]
-    sdfs[~valids] = (sdfs[~valids] > 0).float() * band
+    sdfs[~valids] = (sdfs[~valids] > 0).float() * args.band
     grads[~valids] = 0.0
 
   # save results
@@ -130,7 +137,7 @@ def sample_sdf(sdf, filename_out, pts=None):
   np.savez(filename_out, points=points, grad=grads, sdf=sdfs)
 
   # visualize
-  if debug:
+  if args.debug:
     valids = valids[random_idx].cpu().numpy()
     surf_points = points[valids] - sdfs[valids].reshape(-1, 1) * grads[valids]
     pointcloud = trimesh.PointCloud(surf_points)
@@ -143,8 +150,8 @@ def get_sdf(mesh, filename_obj):
   vertices = mesh.vertices
   # run mesh2sdf
   voxel_sdf, mesh_new = mesh2sdf.compute(
-      vertices, mesh.faces, size, fix=True, level=level, return_mesh=True)
-  if debug:
+      vertices, mesh.faces, args.size, fix=True, level=args.level, return_mesh=True)
+  if args.debug:
     mesh_new.export(filename_obj)
   return mesh_new, voxel_sdf
 
@@ -153,9 +160,9 @@ def get_sdf_cu(mesh, device, filename_obj):
   tris = np.array(mesh.triangles, dtype=np.float32, subok=False)
   tris = torch.tensor(tris, dtype=torch.float32).to(device)
   tris = (tris + 1.0) / 2.0
-  voxel_sdf = torchcumesh2sdf.get_sdf(tris, size, band, B=batch_size)
-  if debug:
-    vertices, faces = diso.DiffMC().to(device).forward(voxel_sdf, isovalue=level)
+  voxel_sdf = torchcumesh2sdf.get_sdf(tris, args.size, args.band, B=args.batch_size)
+  if args.debug:
+    vertices, faces = diso.DiffMC().to(device).forward(voxel_sdf, isovalue=args.level)
     mcubes.export_obj(vertices.cpu().numpy(),
                       faces.cpu().numpy(), filename_obj)
   torchcumesh2sdf.free_cached_memory()
@@ -181,36 +188,48 @@ def process(index, filenames, load_paths, save_paths):
   try:
     mesh = trimesh.load(filename_input, force='mesh')
     mesh = scale_to_unit_cube(mesh)
-    mesh.vertices *= mesh_scale
+    mesh.vertices *= args.mesh_scale
   except:
-    os.remove(filename_input)
+    # os.remove(filename_input)
     print(f"Trimesh load mesh {filename} error")
     return
 
   check_folder([filename_obj, filename_pointcloud, filename_sdf])
   # device = torch.device(f'cuda:{device_list[index % len(device_list)]}')
-  device = torch.device('cuda:1')
-  # try:
-  if mode == "cuda":
+  device = torch.device('cuda:0')
+  if args.mode == "cuda":
     mesh, voxel_sdf = get_sdf_cu(mesh, device, filename_obj)
-  elif mode == "cpu":
+  elif args.mode == "cpu":
     mesh, voxel_sdf = get_sdf(mesh, filename_obj)
     voxel_sdf = torch.tensor(voxel_sdf)
   pointcloud = sample_pts(mesh, filename_pointcloud)
   sample_sdf(voxel_sdf, filename_sdf, pointcloud)
-  # except:
-  #   print(f"{filename} Mesh2SDF error")
-  #   with open('mytools/error.txt', 'a+') as f:
-  #     f.write(f"{filename} Mesh2SDF error\n")
-  #     f.write(traceback.format_exc() + "\n")
-  #   torchcumesh2sdf.free_cached_memory()
-  #   torch.cuda.empty_cache()
-  #   return
   print(f"Mesh {index}/{len(filenames)} {filename} done")
-  
-def get_objaverse_metadata():
+
+def get_shapenet_path():
+  load_path = f'data/ShapeNet/ShapeNetCore.v1'
+  save_path = f'data/ShapeNet/datasets_256'
+  existing_files = set(glob.glob(f"{save_path}/*/*.npz"))
+  filelist_path = f'data/ShapeNet/filelist/im5.txt'
+  with open(filelist_path, 'r') as f:
+    lines = f.readlines()
+  lines = [line.strip() for line in lines]
+  load_paths, save_paths, filenames = [], [], []
+  for line in lines:
+    filename = line.split('/')[-1]
+    if not isinstance(filename, str):
+      continue
+    if os.path.join(save_path, f"{filename}", "sdf.npz") in existing_files and \
+       os.path.join(save_path, f"{filename}", "pointcloud.npz") in existing_files:
+      continue
+    filenames.append(filename)
+    load_paths.append(os.path.join(load_path, line))
+    save_paths.append(os.path.join(save_path, f"{filename}"))
+  return filenames, load_paths, save_paths
+
+def get_objaverse_path():
   load_path = f'data/Objaverse/ObjaverseXL_sketchfab'
-  save_path = f'data/Objaverse/ObjaverseXL_sketchfab/repair_test'
+  save_path = f'data/Objaverse/ObjaverseXL_sketchfab/repair'
   existing_files = set(glob.glob(f"{save_path}/*/*.npz"))
   metadata_path = 'data/Objaverse/filelist/ObjaverseXL_sketchfab.csv'
   metadata = pd.read_csv(metadata_path)
@@ -228,11 +247,14 @@ def get_objaverse_metadata():
 
 
 if __name__ == "__main__":
-  filenames, load_paths, save_paths = get_objaverse_metadata()
+  if args.dataset == "ShapeNet":
+    filenames, load_paths, save_paths = get_shapenet_path()
+  elif args.dataset == "Objaverse":
+    filenames, load_paths, save_paths = get_objaverse_path()
   indices = list(range(len(filenames)))
-  if num_processes > 1:
+  if args.num_processes > 1:
     func = partial(process, filenames=filenames, load_paths=load_paths, save_paths=save_paths)
-    with mp.Pool(processes=num_processes) as pool:
+    with mp.Pool(processes=args.num_processes) as pool:
       list(tqdm(pool.imap_unordered(func, indices), total=len(filenames)))
   else:
     for i in range(len(filenames)):
