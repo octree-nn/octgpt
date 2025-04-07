@@ -102,8 +102,8 @@ MODEL:
     dilation: 8
     buffer_size: 64
     drop_rate: 0.1
-    pos_emb_type: AbsPosEmb
-    norm_type: RMSNorm
+    pos_emb_type: SinPosEmb
+    norm_type: LayerNorm
     use_checkpoint: True
     random_flip: 0.1
     mask_ratio_min: 0.5

@@ -127,7 +127,9 @@ class OctarSolver(Solver):
     self.manual_seed()
     self.config_model()
     self.configure_log(set_writer=False)
-    self.config_dataloader(disable_train_data=True)
+    if self.condition_type != "none":
+      # Walk through the dataset to get the condition
+      self.config_dataloader(disable_train_data=True)
     self.load_checkpoint()
     self.model.eval()
     category = self.FLAGS.DATA.test.filelist.split("_")[-1][:-4]
@@ -147,9 +149,9 @@ class OctarSolver(Solver):
 
   def export_results(self, octree_out, index, vq_code=None, image=None, text=None, output_dir="results"):
     # export the octree
-    # for d in range(self.full_depth + 1, self.depth_stop + 1):
-    #   utils.export_octree(octree_out, d, os.path.join(
-    #       self.logdir, f'{output_dir}/octree_depth{d}'), index=index)
+    for d in range(self.full_depth + 1, self.depth_stop + 1):
+      utils.export_octree(octree_out, d, os.path.join(
+          self.logdir, f'{output_dir}/octree_depth{d}'), index=index)
 
     # decode the octree
     for d in range(self.depth_stop, self.depth):
@@ -186,20 +188,24 @@ class OctarSolver(Solver):
   @torch.no_grad()
   def generate_step(self, index):
     # forward the model
-    batch = next(self.test_iter)
-    self.batch_to_cuda(batch)
+    if self.condition_type != "none":
+      batch = next(self.test_iter)
+      self.batch_to_cuda(batch)
+      condition=batch['condition']
+    else:
+      condition = None
+    
     octree_out = ocnn.octree.init_octree(
         self.depth, self.full_depth, self.FLAGS.DATA.test.batch_size, self.device)
     with torch.autocast("cuda", enabled=self.use_amp):
       octree_out, vq_code = self.model_module.generate(
-          octree=octree_out,
-          depth_low=self.full_depth, depth_high=self.depth_stop,
-          vqvae=self.vqvae_module, condition=batch['condition'])
+          octree=octree_out, depth_low=self.full_depth, depth_high=self.depth_stop,
+          vqvae=self.vqvae_module, condition=condition)
 
     self.export_results(
       octree_out, index, vq_code, output_dir=f"results",
-      image=batch['image'] if 'image' in batch else None,
-      text=batch['text'] if 'text' in batch else None)
+      image=batch['image'] if self.condition_type == 'image' else None,
+      text=batch['text'] if self.condition_type == 'text' else None)
 
 
 if __name__ == '__main__':

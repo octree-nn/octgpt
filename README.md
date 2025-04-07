@@ -54,7 +54,20 @@ We provide the pretrained models for unconditional and category-condition genera
 ### 2.2 Generation
 1. Unconditional generation in category `airplane`, `car`, `chair`, `rifle`, `table`.
 ```
-python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_$category.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth
+# airplane
+python main_octgpt.py --config configs/ShapeNet/shapenet_uncond.yaml SOLVER.run generate SOLVER.ckpt saved_ckpt/octgpt_airplane.pth SOLVER.logdir logs/airplane MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.OctGPT.patch_size 2048 MODEL.OctGPT.dilation 2
+
+# car
+python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_car.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.patch_size 2048 MODEL.dilation 2
+
+# chair
+python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_chair.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.patch_size 2048 MODEL.dilation 2
+
+# rifle
+python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_rifle.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.patch_size 2048 MODEL.dilation 2
+
+# table
+python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_table.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.patch_size 2048 MODEL.dilation 2
 ```
 
 2. Category-conditioned generation
