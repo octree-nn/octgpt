@@ -441,7 +441,16 @@ def get_batch_id(octree, depth_list):
 
 
 def get_depth2batch_indices(octree, depth_list, buffer_size=None, mask=None):
-  # Rearange data from depth-by-depth to batch-by-batch
+  '''
+  Rearange data from depth-by-depth to batch-by-batch
+  # From: [depth3: batch1, batch2, ...,
+           depth4: batch1, batch2, ...,
+           depth5: batch1, batch2, ...]
+
+  # To:   [batch1: depth3, depth4, ...
+           batch2: depth3, depth4, ...
+           batch3: depth3, depth4, ...]
+  '''
   batch_id = get_batch_id(octree, depth_list)
   if buffer_size is not None:
     batch_buffer = torch.arange(

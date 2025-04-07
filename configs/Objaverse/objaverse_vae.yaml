@@ -9,7 +9,7 @@ DATA:
   train:
     name: &name objaverse
     points_scale: &points_scale 1.0  # the scale of point clouds
-    location: &location data/Objaverse/ObjaverseXL_sketchfab/repair
+    location: &location data/Objaverse/ObjaverseXL_sketchfab/datasets_512
     filelist: data/Objaverse/filelist/ObjaverseXL_sketchfab.txt
     # tsdf: &tsdf 0.05
     sdf_file_num: &sdf_file_num 0
@@ -24,4 +24,5 @@ DATA:
     sdf_file_num: *sdf_file_num
 
 MODEL:
+  name: vqvae_huge
   rnd_flip: 0.2

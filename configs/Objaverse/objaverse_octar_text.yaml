@@ -5,7 +5,7 @@ DATA:
   train:
     name: &name objaverse
     points_scale: &points_scale 1.0
-    location: &location data/Objaverse/ObjaverseXL_sketchfab/repair_cpu
+    location: &location data/Objaverse/ObjaverseXL_sketchfab/datasets_512
     filelist: &filelist data/Objaverse/filelist/ObjaverseXL_sketchfab.txt
     load_text: &load_text True
     text_location: &text_location data/Objaverse/filelist/ObjaverseXL_sketchfab.csv
@@ -26,11 +26,9 @@ DATA:
 MODEL:
   OctGPT:
     buffer_size: 77
-    random_flip: 0.5
+    random_flip: 0.2
     num_iters: [64, 128, 128, 256]
     condition_type: text
     condition_encoder: clip
     condition_policy: cross_attn
     context_dim: 768
-    cfg_prob: 0.1
-    cfg_scale: 1.0

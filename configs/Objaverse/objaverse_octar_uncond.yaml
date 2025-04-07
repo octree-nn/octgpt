@@ -16,5 +16,3 @@ MODEL:
     condition_encoder: clip
     condition_policy: concat
     context_dim: 768
-    cfg_prob: 0.0
-    cfg_scale: 1.0

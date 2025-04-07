@@ -39,11 +39,11 @@ DATA:
     rand_drop: False
 
     # data loading
-    location: &location data/ShapeNet/dataset_new
+    location: &location data/ShapeNet/dataset_256
     filelist: data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: True
     load_sdf: True
-    sdf_file_num: &sdf_file_num 8
+    sdf_file_num: &sdf_file_num 0
     batch_size: 2
     shuffle: True
 
@@ -79,11 +79,9 @@ DATA:
 
 
 MODEL:
-  name: vqvae_huge
-
+  name: vqvae_large
   in_channels: 4
-  embedding_sizes: 128
-  embedding_channels: 64
+  embedding_channels: 32
   quantizer_type: bsq
   feature: ND
   rnd_flip: 0.0

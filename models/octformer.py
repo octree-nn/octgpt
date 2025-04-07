@@ -51,7 +51,8 @@ class OctreeT(Octree):
     self.patch_tf_mask, self.dilate_tf_mask = self.build_teacher_forcing_mask()
 
   def build_batch_idx(self):
-    batch_idx_patch = self.patch_partition(self.batch_idx[:self.nnum_t], self.batch_size)
+    batch_idx_patch = self.patch_partition(
+        self.batch_idx[:self.nnum_t], self.batch_size)
     return batch_idx_patch
 
   def build_depth_idx(self):
@@ -159,39 +160,6 @@ class MLP(torch.nn.Module):
     return data
 
 
-class RPE(torch.nn.Module):
-
-  def __init__(self, patch_size: int, num_heads: int, dilation: int = 1):
-    super().__init__()
-    self.patch_size = patch_size
-    self.num_heads = num_heads
-    self.dilation = dilation
-    self.pos_bnd = self.get_pos_bnd(patch_size)
-    self.rpe_num = 2 * self.pos_bnd + 1
-    self.rpe_table = torch.nn.Parameter(torch.zeros(3*self.rpe_num, num_heads))
-    torch.nn.init.trunc_normal_(self.rpe_table, std=0.02)
-
-  def get_pos_bnd(self, patch_size: int):
-    return int(0.8 * patch_size * self.dilation**0.5)
-
-  def xyz2idx(self, xyz: torch.Tensor):
-    mul = torch.arange(3, device=xyz.device) * self.rpe_num
-    xyz = xyz.clamp(-self.pos_bnd, self.pos_bnd)
-    idx = xyz + (self.pos_bnd + mul)
-    return idx
-
-  def forward(self, xyz):
-    idx = self.xyz2idx(xyz)
-    out = self.rpe_table.index_select(0, idx.reshape(-1))
-    out = out.view(idx.shape + (-1,)).sum(3)
-    out = out.permute(0, 3, 1, 2)    # (N, K, K, H) -> (N, H, K, K)
-    return out
-
-  def extra_repr(self) -> str:
-    return 'num_heads={}, pos_bnd={}, dilation={}'.format(
-        self.num_heads, self.pos_bnd, self.dilation)    # noqa
-
-
 class OctreeAttention(torch.nn.Module):
 
   def __init__(self, dim: int, patch_size: int, num_heads: int,
@@ -212,12 +180,6 @@ class OctreeAttention(torch.nn.Module):
     self.proj_drop = torch.nn.Dropout(proj_drop)
     self.softmax = torch.nn.Softmax(dim=-1)
 
-    # NOTE: self.rpe is not used in the original experiments of my paper. When
-    # releasing the code, I added self.rpe because I observed that it could
-    # stablize the training process and improve the performance on ScanNet by
-    # 0.3 to 0.5; on the other datasets, the improvements are more marginal. So
-    # it is not indispensible, and can be removed by setting `use_rpe` as False.
-    # self.rpe = RPE(patch_size, num_heads, dilation) if use_rpe else None
     self.rope = RotaryPosEmb(dim=dim, num_heads=num_heads, rope_mixed=True)
 
   def forward(self, data: torch.Tensor, octree: OctreeT):
@@ -248,7 +210,6 @@ class OctreeAttention(torch.nn.Module):
     # apply rotary position embedding
     qkv = self.rope(qkv, octree)
 
-    Q = K
     q, k, v = patchify_qkv(qkv)
 
     data = F.scaled_dot_product_attention(
@@ -266,7 +227,7 @@ class OctreeAttention(torch.nn.Module):
 
     # patch reverse
     if D > 1:    # dilation
-      data = data.view(-1, D, Q, C).transpose(1, 2).reshape(-1, C)
+      data = data.view(-1, D, K, C).transpose(1, 2).reshape(-1, C)
 
     # patch reverse
     data = octree.patch_reverse(data)
@@ -275,11 +236,6 @@ class OctreeAttention(torch.nn.Module):
     data = self.proj(data)
     data = self.proj_drop(data)
     return data
-
-  def apply_rpe(self, attn, rel_pos):
-    if self.use_rpe:
-      attn = attn + self.rpe(rel_pos)
-    return attn
 
   def extra_repr(self) -> str:
     return 'dim={}, patch_size={}, num_heads={}, dilation={}'.format(
@@ -291,10 +247,10 @@ class OctFormerBlock(torch.nn.Module):
   def __init__(self, dim: int, num_heads: int, patch_size: int = 32,
                dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
                qk_scale: Optional[float] = None, attn_drop: float = 0.0,
-               proj_drop: float = 0.0, drop_path: float = 0.0, nempty: bool = True,
+               proj_drop: float = 0.0, dropout: float = 0.0, nempty: bool = True,
                use_ctx: bool = False, ctx_dim: int = None,
-               pos_emb: torch.nn.Module = SinPosEmb,
-               norm_layer: torch.nn.Module = LayerNorm,
+               pos_emb: torch.nn.Module = AbsPosEmb,
+               norm_layer: torch.nn.Module = RMSNorm,
                activation: torch.nn.Module = torch.nn.GELU,
                **kwargs):
     super().__init__()
@@ -303,14 +259,13 @@ class OctFormerBlock(torch.nn.Module):
                                      qk_scale, attn_drop, proj_drop, dilation)
     self.norm2 = norm_layer(dim)
     self.mlp = MLP(dim, int(dim * mlp_ratio), dim, activation, proj_drop)
-    # self.drop_path = ocnn.nn.OctreeDropPath(drop_path, nempty)
-    self.dropout = torch.nn.Dropout(drop_path)
+    self.dropout = torch.nn.Dropout(dropout)
     self.pos_emb = pos_emb(dim)
     self.use_ctx = use_ctx
     if self.use_ctx:
       self.cross_norm = norm_layer(dim)
       self.cross_attn = torch.nn.MultiheadAttention(
-          embed_dim=dim, num_heads=num_heads, dropout=attn_drop,
+          embed_dim=dim, num_heads=num_heads, dropout=dropout,
           kdim=ctx_dim, vdim=ctx_dim, batch_first=True)
 
   def forward(self, data: torch.Tensor, octree: OctreeT, context: torch.Tensor):
@@ -319,10 +274,14 @@ class OctFormerBlock(torch.nn.Module):
     attn = self.attention(self.norm1(data), octree)
     data = data + self.dropout(attn)
     if self.use_ctx:
-      cross_attn = self.cross_norm(data)
-      cross_attn, _ = self.cross_attn(
-          query=cross_attn.unsqueeze(0), key=context, value=context)
-      cross_attn = cross_attn.squeeze(0)
+      data = self.cross_norm(data)
+      cross_attn = []
+      for i in range(octree.batch_size):
+        mask = octree.batch_idx == i
+        cross_attn_i, _ = self.cross_attn(
+            query=data[mask].unsqueeze(0), key=context[i], value=context[i])
+        cross_attn.append(cross_attn_i)
+      cross_attn = torch.cat(cross_attn, dim=0)
       data = data + cross_attn
     ffn = self.mlp(self.norm2(data))
     data = data + self.dropout(ffn)
@@ -331,16 +290,16 @@ class OctFormerBlock(torch.nn.Module):
 
 class OctFormerStage(torch.nn.Module):
 
-  def __init__(self, dim: int, num_heads: int, num_blocks: int = 2, 
-               patch_size: int = 32, dilation: int = 0, 
-               mlp_ratio: float = 4.0, qkv_bias: bool = True, qk_scale: Optional[float] = None, 
-               attn_drop: float = 0.0, proj_drop: float = 0.0, drop_path: float = 0.0, 
-               nempty: bool = True, use_checkpoint: bool = True, 
+  def __init__(self, dim: int, num_heads: int, num_blocks: int = 2,
+               patch_size: int = 32, dilation: int = 0,
+               mlp_ratio: float = 4.0, qkv_bias: bool = True, qk_scale: Optional[float] = None,
+               attn_drop: float = 0.0, proj_drop: float = 0.0, dropout: float = 0.0,
+               nempty: bool = True, use_checkpoint: bool = True,
                use_ctx: bool = False, ctx_dim: int = None, ctx_interval: int = 2,
-               pos_emb: torch.nn.Module = SinPosEmb,
-               norm_layer: torch.nn.Module = LayerNorm,
+               pos_emb: torch.nn.Module = AbsPosEmb,
+               norm_layer: torch.nn.Module = RMSNorm,
                activation: torch.nn.Module = torch.nn.GELU,
-               octformer_block=OctFormerBlock, 
+               octformer_block=OctFormerBlock,
                **kwargs):
     super().__init__()
     self.num_blocks = num_blocks
@@ -352,14 +311,14 @@ class OctFormerStage(torch.nn.Module):
         mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
         use_ctx=(i % ctx_interval == 0) if use_ctx else False, ctx_dim=ctx_dim,
-        drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
-        nempty=nempty, activation=activation, norm_layer=norm_layer)
+        dropout=dropout, nempty=nempty, activation=activation, norm_layer=norm_layer)
         for i in range(num_blocks)])
 
   def forward(self, data: torch.Tensor, octree: OctreeT, context: torch.Tensor):
     for i in range(self.num_blocks):
       if self.use_checkpoint and self.training:
-        data = checkpoint(self.blocks[i], data, octree, context, use_reentrant=False)
+        data = checkpoint(self.blocks[i], data,
+                          octree, context, use_reentrant=False)
       else:
         data = self.blocks[i](data, octree, context)
     return data
@@ -368,13 +327,13 @@ class OctFormerStage(torch.nn.Module):
 class OctFormer(torch.nn.Module):
 
   def __init__(self,
-               channels: int = 192, num_blocks: int = 16, num_heads: int = 16,
-               patch_size: int = 1024, dilation: int = 16,
-               drop_path: float = 0.5, attn_drop: float = 0.1, proj_drop: float = 0.1,
-               nempty: bool = False, use_checkpoint: bool = True, 
+               channels: int = 768, num_blocks: int = 24, num_heads: int = 8,
+               patch_size: int = 1024, dilation: int = 8,
+               dropout: float = 0.1, attn_drop: float = 0.1, proj_drop: float = 0.1,
+               nempty: bool = False, use_checkpoint: bool = True,
                use_ctx: bool = False, ctx_dim: int = None, ctx_interval: int = 2,
-               pos_emb: torch.nn.Module = SinPosEmb,
-               norm_layer: torch.nn.Module = LayerNorm,
+               pos_emb: torch.nn.Module = AbsPosEmb,
+               norm_layer: torch.nn.Module = RMSNorm,
                **kwargs):
     super().__init__()
     self.patch_size = patch_size
@@ -384,8 +343,8 @@ class OctFormer(torch.nn.Module):
     self.layers = OctFormerStage(
         dim=channels, num_heads=num_heads, patch_size=patch_size,
         dilation=dilation, nempty=nempty, num_blocks=num_blocks,
-        attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
-        norm_layer=norm_layer, use_checkpoint=use_checkpoint,
+        attn_drop=attn_drop, proj_drop=proj_drop, dropout=dropout,
+        pos_emb=pos_emb, norm_layer=norm_layer, use_checkpoint=use_checkpoint,
         use_ctx=use_ctx, ctx_dim=ctx_dim, ctx_interval=ctx_interval)
 
   def forward(self, data: torch.Tensor, octree: OctreeT, context: torch.Tensor = None):

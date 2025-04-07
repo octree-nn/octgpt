@@ -20,4 +20,3 @@ MODEL:
     condition_encoder: dinov2
     condition_policy: cross_attn
     context_dim: 1024
-    cfg_prob: 0.0

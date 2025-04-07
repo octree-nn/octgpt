@@ -23,23 +23,23 @@ class OctGPT(nn.Module):
   def __init__(self,
                num_embed=256,
                num_heads=8,
-               num_blocks=8,
+               num_blocks=24,
                num_classes=1,
-               patch_size=4096,
-               dilation=2,
+               patch_size=1024,
+               dilation=8,
                buffer_size=64,
                drop_rate=0.1,
                pos_emb_type="AbsPosEmb",
                norm_type="RMSNorm",
                use_checkpoint=True,
                random_flip=0.0,
-               mask_ratio_min=0.7,
+               mask_ratio_min=0.5,
                start_temperature=1.0,
-               remask_stage=0.9,
+               remask_stage=0.7,
                num_iters=[64, 128, 128, 256],
                vqvae_config=None,
                condition_type="none",
-               condition_policy="concat",
+               condition_policy="cross_attn",
                context_dim=512,
                **kwargs):
     super(OctGPT, self).__init__()
@@ -96,7 +96,7 @@ class OctGPT(nn.Module):
     self.encoder = OctFormer(
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
-        attn_drop=self.drop_rate, proj_drop=self.drop_rate,
+        attn_drop=self.drop_rate, proj_drop=self.drop_rate, dropout=self.drop_rate,
         nempty=False, use_checkpoint=self.use_checkpoint,
         use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
@@ -105,9 +105,9 @@ class OctGPT(nn.Module):
     self.decoder = OctFormer(
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
-        attn_drop=self.drop_rate, proj_drop=self.drop_rate,
+        attn_drop=self.drop_rate, proj_drop=self.drop_rate, dropout=self.drop_rate,
         nempty=False, use_checkpoint=self.use_checkpoint,
-        use_ctx=self.condition_policy=="cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
+        use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.decoder_ln = eval(self.norm_type)(self.num_embed)
 
@@ -371,7 +371,8 @@ class OctGPT(nn.Module):
           vq_logits = self.vq_head(x)
           if i > num_iters * self.remask_stage:
             vq_logits = vq_logits.reshape(-1, self.vq_groups, self.vq_size)
-            remask = self.get_remask(vq_logits, vq_indices_d, mask_d, topk=5, remask_prob=0.1)
+            remask = self.get_remask(
+                vq_logits, vq_indices_d, mask_d, topk=5, remask_prob=0.1)
             mask_to_pred = mask_to_pred | remask
           vq_logits = vq_logits[mask_to_pred].reshape(-1, self.vq_size)
           ix = sample(vq_logits, temperature=temperature)
