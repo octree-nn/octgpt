@@ -31,8 +31,12 @@ parser.add_argument('--level', type=float, default=1/256)
 parser.add_argument('--band', type=float, default=0.05)
 parser.add_argument('--num_samples', type=int, default=200000)
 parser.add_argument('--num_processes', type=int, default=32)
+parser.add_argument('--depth', type=int, default=8)
+parser.add_argument('--full_depth', type=int, default=4)
 args = parser.parse_args()
 
+args.size = 2 ** args.depth
+args.level = 1 / args.size
 if args.debug:
   args.num_processes = 1
 else:
@@ -55,7 +59,7 @@ def sample_pts(mesh, filename_pts):
 
 def sample_sdf(sdf, filename_out, pts=None):
   # constants
-  depth, full_depth = 8, 4
+  depth, full_depth = args.depth, args.full_depth
   sample_num = 4  # number of samples in each octree node 也就是文中说的在每个八叉树的节点，采4个点并计算对应的sdf值。
   grid = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1],
                   [1, 0, 0], [1, 0, 1], [1, 1, 0], [1, 1, 1]])
@@ -229,7 +233,7 @@ def get_shapenet_path():
 
 def get_objaverse_path():
   load_path = f'data/Objaverse/ObjaverseXL_sketchfab'
-  save_path = f'data/Objaverse/ObjaverseXL_sketchfab/repair'
+  save_path = f'data/Objaverse/ObjaverseXL_sketchfab/datasets_512'
   existing_files = set(glob.glob(f"{save_path}/*/*.npz"))
   metadata_path = 'data/Objaverse/filelist/ObjaverseXL_sketchfab.csv'
   metadata = pd.read_csv(metadata_path)

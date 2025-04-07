@@ -13,11 +13,9 @@ Accepted by SIGGRAPH 2025
 
 - [OctGPT: Octree-based Multiscale Autoregressive Models for 3D Shape Generation](#octgpt-octree-based-multiscale-autoregressive-models-for-3d-shape-generation)
   - [1. Installation](#1-installation)
-  - [2. ScanNet Segmentation](#2-scannet-segmentation)
-  - [3. ScanNet200 Segmentation](#3-scannet200-segmentation)
-  - [4. SUN RGB-D Detection](#4-sun-rgb-d-detection)
-  - [5. ModelNet40 Classification](#5-modelnet40-classification)
-  - [6. Citation](#6-citation)
+  - [2. ShapeNet](#2-shapenet)
+  - [3. Objaverse](#3-objaverse)
+  - [4. Citation](#4-citation)
 
 
 ## 1. Installation
@@ -60,7 +58,7 @@ python main_octgpt.py \
 SOLVER.run generate \
 SOLVER.ckpt saved_ckpt/octgpt_${category}.pth \
 SOLVER.logdir logs/${category} \
-MODEL.vqvae_ckpt saved_ckpt/vqvae_large_uncond_bsq32.pth \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_uncond_bsq32.pth \
 MODEL.OctGPT.patch_size 2048 \
 MODEL.OctGPT.dilation 2
 ```
@@ -73,7 +71,7 @@ python main_octgpt.py \
 SOLVER.run generate \
 SOLVER.ckpt saved_ckpt/octgpt_im5.pth \
 SOLVER.logdir logs/im5 \
-MODEL.vqvae_ckpt saved_ckpt/vqvae_large_cond_bsq32.pth \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_cond_bsq32.pth \
 MODEL.OctGPT.condition_type category \
 MODEL.OctGPT.num_classes 5 \
 MODEL.OctGPT.patch_size 1024 \
@@ -91,7 +89,7 @@ We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft
 ```bash
 python tools/sample_sdf.py --mode cpu --dataset ShapeNet
 ```
-#### 2.3.2 Training
+#### 2.3.2 Training Setup
 
 1. Unconditional Generation
 ```bash
@@ -101,7 +99,7 @@ python main_octgpt.py \
 SOLVER.run train \
 SOLVER.gpu 0,1,2,3 \
 SOLVER.logdir logs/${category} \
-MODEL.vqvae_ckpt saved_ckpt/vqvae_large_uncond_bsq32.pth
+MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_uncond_bsq32.pth
 ```
 
 2. Category-condition Generation
@@ -111,11 +109,54 @@ python main_octgpt.py \
 SOLVER.run train \
 SOLVER.gpu 0,1,2,3 \
 SOLVER.logdir logs/im5 \
-MODEL.vqvae_ckpt saved_ckpt/vqvae_large_cond_bsq32.pth \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_cond_bsq32.pth \
 MODEL.OctGPT.condition_type category \
 MODEL.OctGPT.num_classes 5
 ```
-## 6. Citation
+
+## 3. Objaverse
+### 3.1 Download pre-trained models
+Download the pretrained models from [Hugging Face](https://huggingface.co/wst2001/OctGPT) and put them in `saved_ckpt`.
+
+### 3.2 Text-condition Generation
+1. Generate based on a specific text prompt
+```bash
+python main_octgpt.py \
+--config configs/Objaverse/objaverse_octar_text.yaml \
+SOLVER.run generate \
+SOLVER.logdir logs/obja_text \
+SOLVER.ckpt saved_ckpt/octgpt_objv_text.pth \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
+DATA.test.text_prompt "A chair."
+```
+2. Generate across the dataset
+```bash
+python main_octgpt.py \
+--config configs/Objaverse/objaverse_octar_text.yaml \
+SOLVER.run generate \
+SOLVER.logdir logs/obja_text \
+SOLVER.ckpt saved_ckpt/octgpt_objv_text.pth \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
+```
+
+### 3.3 Training
+#### 3.3.1 Data Preparation
+We adopt the data filtering and preprocessing pipeline from from [TRELLIS](https://github.com/Microsoft/TRELLIS). Our model is trained on a subset of `ObjaverseXL-sketchfab` containing 16w 3D meshes.
+Please place the raw dataset on `data/Objaverse/ObjaverseXL_sketchfab/raw` and the metafile on `data/Objaverse/ObjaverseXL_sketchfab/metadata.csv`. Then conduct mesh repairing and save the results on `data/Objaverse/ObjaverseXL_sketchfab/datasets_512`
+```bash
+python tools/sample_sdf.py --mode cuda --dataset Objaverse --depth 9
+```
+#### 3.3.2 Training Setup
+```bash
+python main_octgpt.py \
+--config configs/Objaverse/objaverse_octar_text.yaml \
+SOLVER.run train \
+SOLVER.gpu 0,1,2,3,4,5,6,7 \
+SOLVER.logdir logs/obja_text \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
+```
+
+## 4. Citation
 ```bibtex
 @article {Wang2023OctFormer,
     title      = {OctFormer: Octree-based Transformers for {3D} Point Clouds},
