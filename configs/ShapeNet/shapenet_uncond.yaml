@@ -1,5 +1,5 @@
 SOLVER:
-  gpu: 0,1,2,3
+  gpu: 0,
   run: train
 
   logdir: logs/test/shapenet_octar

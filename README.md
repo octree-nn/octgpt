@@ -99,6 +99,7 @@ export category=airplane && \
 python main_octgpt.py \
 --config configs/ShapeNet/shapenet_uncond.yaml \
 SOLVER.run train \
+SOLVER.gpu 0,1,2,3 \
 SOLVER.logdir logs/${category} \
 MODEL.vqvae_ckpt saved_ckpt/vqvae_large_uncond_bsq32.pth
 ```
@@ -108,6 +109,7 @@ MODEL.vqvae_ckpt saved_ckpt/vqvae_large_uncond_bsq32.pth
 python main_octgpt.py \
 --config configs/ShapeNet/shapenet_uncond.yaml \
 SOLVER.run train \
+SOLVER.gpu 0,1,2,3 \
 SOLVER.logdir logs/im5 \
 MODEL.vqvae_ckpt saved_ckpt/vqvae_large_cond_bsq32.pth \
 MODEL.OctGPT.condition_type category \
