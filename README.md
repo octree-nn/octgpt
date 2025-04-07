@@ -49,7 +49,7 @@ The code has been tested on Ubuntu 20.04 and CUDA 12.4.
 ## 2. ShapeNet
 
 ### 2.1 Download pre-trained models
-We provide the pretrained models for unconditional and category-condition generation. Please download the pretrained models from [Hugging Face](https://huggingface.co) and put them in `saved_ckpt`.
+We provide the pretrained models for unconditional and category-condition generation. Please download the pretrained models from [Hugging Face](https://huggingface.co/wst2001/OctGPT) and put them in `saved_ckpt`.
 
 ### 2.2 Generation
 1. Unconditional generation in category `airplane`, `car`, `chair`, `rifle`, `table`.
@@ -84,10 +84,10 @@ DATA.test.filelist data/ShapeNet/filelist/test_${category}.txt
 ### 2.3 Training
 #### 2.3.1 Data Preparation
 
-1. Download `ShapeNetCore.v1.zip` (31G) from [ShapeNet](https://shapenet.org/) and place it in `data/ShapeNet/ShapeNetCore.v1.zip`. Download `filelist` from [HuggingFace](https://drive.google.com/drive/folders/140U_xzAy1MobUqurN67Fm2Y-3oWrZQ1m?usp=drive_link) and place it in `data/ShapeNet/filelist`.
+1. Download `ShapeNetCore.v1.zip` (31G) from [ShapeNet](https://shapenet.org/) and place it in `data/ShapeNet/ShapeNetCore.v1.zip`. Download `filelist` from [HuggingFace](https://huggingface.co/wst2001/OctGPT) and place it in `data/ShapeNet/filelist`.
 
 2. Convert the meshes in `ShapeNetCore.v1` to signed distance fields (SDFs).
-We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft/DualOctreeGNN.git) and [OctFusion](https://github.com/octree-nn/octfusion). We utilize [mesh2sdf](https://github.com/wang-ps/mesh2sdf) and [cumesh2sdf](https://github.com/eliphatfs/cumesh2sdf). Note that cumesh2sdf is much faster but has some noise apart from surface.
+We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft/DualOctreeGNN.git) and [OctFusion](https://github.com/octree-nn/octfusion). We utilize [mesh2sdf](https://github.com/wang-ps/mesh2sdf) and [cumesh2sdf](https://github.com/eliphatfs/cumesh2sdf). Note that cumesh2sdf is much faster but has some errors when the sampling points are far from surface.
 ```bash
 python tools/sample_sdf.py --mode cpu --dataset ShapeNet
 ```
