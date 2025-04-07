@@ -53,67 +53,74 @@ We provide the pretrained models for unconditional and category-condition genera
 
 ### 2.2 Generation
 1. Unconditional generation in category `airplane`, `car`, `chair`, `rifle`, `table`.
-```
-# airplane
-python main_octgpt.py --config configs/ShapeNet/shapenet_uncond.yaml SOLVER.run generate SOLVER.ckpt saved_ckpt/octgpt_airplane.pth SOLVER.logdir logs/airplane MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.OctGPT.patch_size 2048 MODEL.OctGPT.dilation 2
-
-# car
-python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_car.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.patch_size 2048 MODEL.dilation 2
-
-# chair
-python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_chair.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.patch_size 2048 MODEL.dilation 2
-
-# rifle
-python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_rifle.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.patch_size 2048 MODEL.dilation 2
-
-# table
-python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_table.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth MODEL.patch_size 2048 MODEL.dilation 2
+```bash
+export category=airplane && \
+python main_octgpt.py \
+--config configs/ShapeNet/shapenet_uncond.yaml \
+SOLVER.run generate \
+SOLVER.ckpt saved_ckpt/octgpt_${category}.pth \
+SOLVER.logdir logs/${category} \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_large_uncond_bsq32.pth \
+MODEL.OctGPT.patch_size 2048 \
+MODEL.OctGPT.dilation 2
 ```
 
 2. Category-conditioned generation
-```
-python main_octgpt.py --config configs/ShapeNet/shapenet_octar.yaml SOLVER.ckpt saved_ckpt/octgpt_im5.pth MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_bsq32.pth
+```bash
+export category=airplane && \
+python main_octgpt.py \
+--config configs/ShapeNet/shapenet_uncond.yaml \
+SOLVER.run generate \
+SOLVER.ckpt saved_ckpt/octgpt_im5.pth \
+SOLVER.logdir logs/im5 \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_large_cond_bsq32.pth \
+MODEL.OctGPT.condition_type category \
+MODEL.OctGPT.num_classes 5 \
+MODEL.OctGPT.patch_size 1024 \
+MODEL.OctGPT.dilation 16 \
+DATA.test.filelist data/ShapeNet/filelist/test_${category}.txt
 ```
 
-## 3. Train from scratch
-### 3.1 Data Preparation
+### 2.3 Training
+#### 2.3.1 Data Preparation
 
 1. Download `ShapeNetCore.v1.zip` (31G) from [ShapeNet](https://shapenet.org/) and place it in `data/ShapeNet/ShapeNetCore.v1.zip`. Download `filelist` from [HuggingFace](https://drive.google.com/drive/folders/140U_xzAy1MobUqurN67Fm2Y-3oWrZQ1m?usp=drive_link) and place it in `data/ShapeNet/filelist`.
 
 2. Convert the meshes in `ShapeNetCore.v1` to signed distance fields (SDFs).
 We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft/DualOctreeGNN.git) and [OctFusion](https://github.com/octree-nn/octfusion). We utilize [mesh2sdf](https://github.com/wang-ps/mesh2sdf) and [cumesh2sdf](https://github.com/eliphatfs/cumesh2sdf). Note that cumesh2sdf is much faster but has some noise apart from surface.
 ```bash
-python tools/sample_sdf.py --mode cpu
-python tools/sample_sdf.py --mode cpu
+python tools/sample_sdf.py --mode cpu --dataset ShapeNet
 ```
+#### 2.3.2 Training
 
-
-
-### 3.2 Train OctFusion
-1. VAE Training. We provide pretrained weights in `saved_ckpt/vae-ckpt/vae-shapenet-depth-8.pth`.
+1. Unconditional Generation
 ```bash
-sh scripts/run_snet_vae.sh train vae im_5
-```
-2. Train the first stage model. We provide pretrained weights in `saved_ckpt/diffusion-ckpt/$category/df_steps-split.pth`.
-```bash
-sh scripts/run_snet_uncond.sh train lr $category
+export category=airplane && \
+python main_octgpt.py \
+--config configs/ShapeNet/shapenet_uncond.yaml \
+SOLVER.run train \
+SOLVER.logdir logs/${category} \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_large_uncond_bsq32.pth
 ```
 
-3. Load the pretrained first stage model and train the second stage. We provide pretrained weights in `saved_ckpt/diffusion-ckpt/$category/df_steps-union.pth`. 
+2. Category-condition Generation
 ```bash
-sh scripts/run_snet_uncond.sh train hr $category
+python main_octgpt.py \
+--config configs/ShapeNet/shapenet_uncond.yaml \
+SOLVER.run train \
+SOLVER.logdir logs/im5 \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_large_cond_bsq32.pth \
+MODEL.OctGPT.condition_type category \
+MODEL.OctGPT.num_classes 5
 ```
-# <a name="citation"></a> Citation
-
 ## 6. Citation
-
-   ```bibtex
-    @article {Wang2023OctFormer,
-        title      = {OctFormer: Octree-based Transformers for {3D} Point Clouds},
-        author     = {Wang, Peng-Shuai},
-        journal    = {ACM Transactions on Graphics (SIGGRAPH)},
-        volume     = {42},
-        number     = {4},
-        year       = {2023},
-    }
+```bibtex
+@article {Wang2023OctFormer,
+    title      = {OctFormer: Octree-based Transformers for {3D} Point Clouds},
+    author     = {Wang, Peng-Shuai},
+    journal    = {ACM Transactions on Graphics (SIGGRAPH)},
+    volume     = {42},
+    number     = {4},
+    year       = {2023},
+}
    ```

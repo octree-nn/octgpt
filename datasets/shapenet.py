@@ -153,7 +153,9 @@ class TransformShape:
 
   def __call__(self, sample, idx):
     # sample = self.rand_drop(sample)
-    output = self.process_points_cloud(sample['point_cloud'])
+    output = {}
+    if self.flags.get('load_pointcloud'):
+      output.update(self.process_points_cloud(sample['point_cloud']))
 
     if self.flags.get('load_sdf'):
       samples = self.sample_volume(sample['sdf'])

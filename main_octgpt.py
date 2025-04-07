@@ -74,9 +74,9 @@ class OctarSolver(Solver):
     if self.condition_type == "none":
       batch['condition'] = None
     elif self.condition_type == "category":
-      if self.FLAGS.DATA.train.filelist.endswith("im_5.txt"):
+      if self.FLAGS.MODEL.OctGPT.num_classes == 5:
         id_to_label = snc_synth_id_to_label_5
-      elif self.FLAGS.DATA.train.filelist.endswith("im_all.txt"):
+      elif self.FLAGS.MODEL.OctGPT.num_classes == 13:
         id_to_label = snc_synth_id_to_label_13
       label = [id_to_label[filename.split("/")[0]]
                for filename in batch['filename']]
@@ -129,6 +129,10 @@ class OctarSolver(Solver):
     self.configure_log(set_writer=False)
     if self.condition_type != "none":
       # Walk through the dataset to get the condition
+      self.FLAGS.defrost()
+      self.FLAGS.DATA.test.load_pointcloud = False
+      self.FLAGS.DATA.test.load_sdf = False
+      self.FLAGS.freeze()
       self.config_dataloader(disable_train_data=True)
     self.load_checkpoint()
     self.model.eval()
