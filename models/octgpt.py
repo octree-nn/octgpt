@@ -32,6 +32,7 @@ class OctGPT(nn.Module):
                pos_emb_type="AbsPosEmb",
                norm_type="RMSNorm",
                use_checkpoint=True,
+               use_swin=True,
                random_flip=0.0,
                mask_ratio_min=0.5,
                start_temperature=1.0,
@@ -54,6 +55,7 @@ class OctGPT(nn.Module):
     self.pos_emb_type = pos_emb_type
     self.norm_type = norm_type
     self.use_checkpoint = use_checkpoint
+    self.use_swin = use_swin
     self.random_flip = random_flip
     self.start_temperature = start_temperature
     self.remask_stage = remask_stage
@@ -97,7 +99,7 @@ class OctGPT(nn.Module):
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate, dropout=self.drop_rate,
-        nempty=False, use_checkpoint=self.use_checkpoint,
+        nempty=False, use_checkpoint=self.use_checkpoint, use_swin=self.use_swin,
         use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.encoder_ln = eval(self.norm_type)(self.num_embed)
@@ -106,7 +108,7 @@ class OctGPT(nn.Module):
         channels=self.num_embed, num_blocks=self.num_blocks//2, num_heads=self.num_heads,
         patch_size=self.patch_size, dilation=self.dilation,
         attn_drop=self.drop_rate, proj_drop=self.drop_rate, dropout=self.drop_rate,
-        nempty=False, use_checkpoint=self.use_checkpoint,
+        nempty=False, use_checkpoint=self.use_checkpoint, use_swin=self.use_swin,
         use_ctx=self.condition_policy == "cross_attn", ctx_dim=self.context_dim, ctx_interval=2,
         pos_emb=eval(self.pos_emb_type), norm_layer=eval(self.norm_type))
     self.decoder_ln = eval(self.norm_type)(self.num_embed)

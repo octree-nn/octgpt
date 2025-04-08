@@ -21,6 +21,7 @@ class OctreeT(Octree):
 
   def __init__(self, octree: Octree, data_length: int, patch_size: int = 24,
                dilation: int = 4, nempty: bool = True, depth_list: list = None,
+               use_swin: bool = True,
                data_mask: torch.Tensor = None, buffer_size: int = 0, **kwargs):
     super().__init__(octree.depth, octree.full_depth)
     self.__dict__.update(octree.__dict__)
@@ -28,6 +29,7 @@ class OctreeT(Octree):
     self.patch_size = patch_size
     self.dilation = dilation    # TODO dilation as a list
     self.nempty = nempty
+    self.use_swin = use_swin
     self.depth_list = depth_list if depth_list != None else \
         list(range(self.full_depth, self.depth + 1))
     self.data_mask = data_mask
@@ -39,6 +41,10 @@ class OctreeT(Octree):
     self.nnum_t = torch.tensor(data_length, device=self.device)
     self.nnum_a = (torch.ceil(self.nnum_t / self.block_num)
                    * self.block_num).int()
+    if self.use_swin:
+      self.swin_nnum_pad = self.patch_size // 2
+      self.swin_nnum_a = (torch.ceil(
+          (self.nnum_t + self.swin_nnum_pad) / self.block_num) * self.block_num).int()
     self.batch_idx, self.indices = get_depth2batch_indices(
         self, self.depth_list, buffer_size, self.data_mask)
     self.build_t()
@@ -49,10 +55,15 @@ class OctreeT(Octree):
 
     self.patch_mask, self.dilate_mask = self.build_attn_mask()
     self.patch_tf_mask, self.dilate_tf_mask = self.build_teacher_forcing_mask()
+    if self.use_swin:
+      self.swin_patch_mask, self.swin_dilate_mask = self.build_attn_mask(
+          use_swin=True)
+      self.swin_patch_tf_mask, self.swin_dilate_tf_mask = \
+          self.build_teacher_forcing_mask(use_swin=True)
 
-  def build_batch_idx(self):
+  def build_batch_idx(self, use_swin=False):
     batch_idx_patch = self.patch_partition(
-        self.batch_idx[:self.nnum_t], self.batch_size)
+        self.batch_idx[:self.nnum_t], self.batch_size, use_swin=use_swin)
     return batch_idx_patch
 
   def build_depth_idx(self):
@@ -65,8 +76,8 @@ class OctreeT(Octree):
     depth_idx = depth2batch(depth_idx, self.indices)
     return depth_idx
 
-  def build_attn_mask(self):
-    batch = self.build_batch_idx()
+  def build_attn_mask(self, use_swin=False):
+    batch = self.build_batch_idx(use_swin)
     mask = batch.view(-1, self.patch_size)
     patch_mask = self._calc_attn_mask(mask)
 
@@ -75,10 +86,10 @@ class OctreeT(Octree):
     dilate_mask = self._calc_attn_mask(mask)
     return patch_mask, dilate_mask
 
-  def build_teacher_forcing_mask(self):
+  def build_teacher_forcing_mask(self, use_swin=False):
     max_value = self.depth_idx[:self.nnum_t].max()
     group = self.patch_partition(
-        self.depth_idx[:self.nnum_t], fill_value=max_value + 1)
+        self.depth_idx[:self.nnum_t], fill_value=max_value + 1, use_swin=use_swin)
     mask = group.view(-1, self.patch_size)
     patch_tf_mask = self._calc_attn_mask(mask, cond="le")
 
@@ -89,10 +100,12 @@ class OctreeT(Octree):
 
   def _calc_attn_mask(self, mask: torch.Tensor, cond="neq"):
     attn_mask = mask.unsqueeze(2) - mask.unsqueeze(1)
+    swin_mask = torch.logical_or(
+        mask.unsqueeze(2) == -1, mask.unsqueeze(1) == -1)
     if cond == "neq":
-      mask_label = (attn_mask != 0)
+      mask_label = (attn_mask != 0) | swin_mask
     elif cond == "le":
-      mask_label = (attn_mask < 0)
+      mask_label = (attn_mask < 0) | swin_mask
     else:
       raise ValueError("Invalid condition")
     attn_mask = torch.zeros_like(attn_mask).masked_fill(
@@ -123,16 +136,26 @@ class OctreeT(Octree):
     xyz = depth2batch(xyz, self.indices)
     return xyz
 
-  def patch_partition(self, data: torch.Tensor, fill_value=0):
+  def patch_partition(self, data: torch.Tensor, fill_value=0, use_swin=False):
     assert data.shape[0] == self.nnum_t
-    num = self.nnum_a - self.nnum_t
-    tail = data.new_full((num,) + data.shape[1:], fill_value)
-    data = torch.cat([data, tail], dim=0)
+
+    if use_swin:
+      head = data.new_full((self.swin_nnum_pad,) + data.shape[1:], -1)
+      num = self.swin_nnum_a - self.nnum_t - self.swin_nnum_pad
+      tail = data.new_full((num,) + data.shape[1:], fill_value)
+      data = torch.cat([head, data, tail], dim=0)
+    else:
+      num = self.nnum_a - self.nnum_t
+      tail = data.new_full((num,) + data.shape[1:], fill_value)
+      data = torch.cat([data, tail], dim=0)
 
     return data
 
-  def patch_reverse(self, data: torch.Tensor):
-    data = data[:self.nnum_t]
+  def patch_reverse(self, data: torch.Tensor, use_swin=False):
+    if use_swin:
+      data = data[self.swin_nnum_pad:self.nnum_t + self.swin_nnum_pad]
+    else:
+      data = data[:self.nnum_t]
     return data
 
 
@@ -165,13 +188,16 @@ class OctreeAttention(torch.nn.Module):
   def __init__(self, dim: int, patch_size: int, num_heads: int,
                qkv_bias: bool = True, qk_scale: Optional[float] = None,
                attn_drop: float = 0.0, proj_drop: float = 0.0,
-               dilation: int = 1,
-               **kwargs):
+               dilation: int = 1, use_rpe: bool = False,
+               use_rope: bool = True, use_swin: bool = True, **kwargs):
     super().__init__()
     self.dim = dim
     self.patch_size = patch_size
     self.num_heads = num_heads
     self.dilation = dilation
+    self.use_rpe = use_rpe
+    self.use_rope = use_rope
+    self.use_swin = use_swin
     self.scale = qk_scale or (dim // num_heads) ** -0.5
 
     self.qkv = torch.nn.Linear(dim, dim * 3, bias=qkv_bias)
@@ -189,14 +215,16 @@ class OctreeAttention(torch.nn.Module):
     D = self.dilation
 
     if D > 1:
-      mask = octree.dilate_mask + octree.dilate_tf_mask
+      mask = octree.dilate_mask if not self.use_swin else octree.swin_dilate_mask
+      mask += octree.dilate_tf_mask if not self.use_swin else octree.swin_dilate_tf_mask
     else:
-      mask = octree.patch_mask + octree.patch_tf_mask
+      mask = octree.patch_mask if not self.use_swin else octree.swin_patch_mask
+      mask += octree.patch_tf_mask if not self.use_swin else octree.swin_patch_tf_mask
     mask = mask.float()
 
     def patchify_qkv(qkv: torch.Tensor):
       # patch partition
-      qkv = octree.patch_partition(qkv)
+      qkv = octree.patch_partition(qkv, use_swin=self.use_swin)
       if D > 1:    # dilation
         qkv = qkv.view(-1, K, D, C * 3).transpose(1, 2).reshape(-1, C * 3)
       qkv = qkv.view(-1, K, C * 3)
@@ -230,7 +258,7 @@ class OctreeAttention(torch.nn.Module):
       data = data.view(-1, D, K, C).transpose(1, 2).reshape(-1, C)
 
     # patch reverse
-    data = octree.patch_reverse(data)
+    data = octree.patch_reverse(data, use_swin=self.use_swin)
 
     # ffn
     data = self.proj(data)
@@ -247,7 +275,7 @@ class OctFormerBlock(torch.nn.Module):
   def __init__(self, dim: int, num_heads: int, patch_size: int = 32,
                dilation: int = 0, mlp_ratio: float = 4.0, qkv_bias: bool = True,
                qk_scale: Optional[float] = None, attn_drop: float = 0.0,
-               proj_drop: float = 0.0, dropout: float = 0.0, nempty: bool = True,
+               proj_drop: float = 0.0, dropout: float = 0.0, nempty: bool = True, use_swin: bool = False,
                use_ctx: bool = False, ctx_dim: int = None,
                pos_emb: torch.nn.Module = AbsPosEmb,
                norm_layer: torch.nn.Module = RMSNorm,
@@ -256,7 +284,8 @@ class OctFormerBlock(torch.nn.Module):
     super().__init__()
     self.norm1 = norm_layer(dim)
     self.attention = OctreeAttention(dim, patch_size, num_heads, qkv_bias,
-                                     qk_scale, attn_drop, proj_drop, dilation)
+                                     qk_scale, attn_drop, proj_drop, dilation,
+                                     use_swin=use_swin)
     self.norm2 = norm_layer(dim)
     self.mlp = MLP(dim, int(dim * mlp_ratio), dim, activation, proj_drop)
     self.dropout = torch.nn.Dropout(dropout)
@@ -294,7 +323,7 @@ class OctFormerStage(torch.nn.Module):
                patch_size: int = 32, dilation: int = 0,
                mlp_ratio: float = 4.0, qkv_bias: bool = True, qk_scale: Optional[float] = None,
                attn_drop: float = 0.0, proj_drop: float = 0.0, dropout: float = 0.0,
-               nempty: bool = True, use_checkpoint: bool = True,
+               nempty: bool = True, use_checkpoint: bool = True, use_swin: bool = False,
                use_ctx: bool = False, ctx_dim: int = None, ctx_interval: int = 2,
                pos_emb: torch.nn.Module = AbsPosEmb,
                norm_layer: torch.nn.Module = RMSNorm,
@@ -310,6 +339,7 @@ class OctFormerStage(torch.nn.Module):
         dilation=1 if (i % 2 == 0) else dilation,
         mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
         attn_drop=attn_drop, proj_drop=proj_drop, pos_emb=pos_emb,
+        use_swin=((i // 2) % 2 == 1) if use_swin else False,
         use_ctx=(i % ctx_interval == 0) if use_ctx else False, ctx_dim=ctx_dim,
         dropout=dropout, nempty=nempty, activation=activation, norm_layer=norm_layer)
         for i in range(num_blocks)])
@@ -330,7 +360,7 @@ class OctFormer(torch.nn.Module):
                channels: int = 768, num_blocks: int = 24, num_heads: int = 8,
                patch_size: int = 1024, dilation: int = 8,
                dropout: float = 0.1, attn_drop: float = 0.1, proj_drop: float = 0.1,
-               nempty: bool = False, use_checkpoint: bool = True,
+               nempty: bool = False, use_checkpoint: bool = True, use_swin: bool = False,
                use_ctx: bool = False, ctx_dim: int = None, ctx_interval: int = 2,
                pos_emb: torch.nn.Module = AbsPosEmb,
                norm_layer: torch.nn.Module = RMSNorm,
@@ -339,12 +369,13 @@ class OctFormer(torch.nn.Module):
     self.patch_size = patch_size
     self.dilation = dilation
     self.nempty = nempty
+    self.use_swin = use_swin
 
     self.layers = OctFormerStage(
         dim=channels, num_heads=num_heads, patch_size=patch_size,
         dilation=dilation, nempty=nempty, num_blocks=num_blocks,
         attn_drop=attn_drop, proj_drop=proj_drop, dropout=dropout,
-        pos_emb=pos_emb, norm_layer=norm_layer, use_checkpoint=use_checkpoint,
+        pos_emb=pos_emb, norm_layer=norm_layer, use_checkpoint=use_checkpoint, use_swin=use_swin,
         use_ctx=use_ctx, ctx_dim=ctx_dim, ctx_interval=ctx_interval)
 
   def forward(self, data: torch.Tensor, octree: OctreeT, context: torch.Tensor = None):

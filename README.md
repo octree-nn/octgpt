@@ -142,7 +142,10 @@ MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
 ### 3.3 Training
 #### 3.3.1 Data Preparation
 We adopt the data filtering and preprocessing pipeline from from [TRELLIS](https://github.com/Microsoft/TRELLIS). Our model is trained on a subset of `ObjaverseXL-sketchfab` containing 16w 3D meshes.
-Please place the raw dataset on `data/Objaverse/ObjaverseXL_sketchfab/raw` and the metafile on `data/Objaverse/ObjaverseXL_sketchfab/metadata.csv`. Then conduct mesh repairing and save the results on `data/Objaverse/ObjaverseXL_sketchfab/datasets_512`
+To replicate our experimental setup, please follow these steps:
+- Place the raw dataset in `data/Objaverse/ObjaverseXL_sketchfab/raw`.
+- Store the metadata file in `data/Objaverse/ObjaverseXL_sketchfab/metadata.csv`.
+- Conduct mesh repairing and save the processed meshes to `data/Objaverse/ObjaverseXL_sketchfab/datasets_512`.
 ```bash
 python tools/sample_sdf.py --mode cuda --dataset Objaverse --depth 9
 ```
