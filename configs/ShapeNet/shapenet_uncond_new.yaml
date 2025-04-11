@@ -1,0 +1,26 @@
+BASE:
+  - configs/ShapeNet/shapenet_uncond.yaml
+
+MODEL:
+  OctGPT:
+    num_embed: 1152
+    num_heads: 8
+    num_blocks: 24
+    num_classes: 1
+    split_size: 2
+    patch_size: 1024
+    dilation: 8
+    buffer_size: 64
+    drop_rate: 0.1
+    pos_emb_type: AbsPosEmb
+    norm_type: RMSNorm
+    use_checkpoint: True
+    use_swin: False
+    random_flip: 0.1
+    mask_ratio_min: 0.5
+    remask_stage: 0.7
+    start_temperature: [1.0, 1.2, 0.5, 0.5]
+    num_iters: [64, 128, 128, 256]
+    condition_type: none
+    condition_encoder: vit
+    condition_policy: concat

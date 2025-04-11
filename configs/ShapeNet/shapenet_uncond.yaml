@@ -98,8 +98,8 @@ MODEL:
     num_blocks: 24
     num_classes: 1
     split_size: 2
-    patch_size: 1024
-    dilation: 8
+    patch_size: 2048
+    dilation: 2
     buffer_size: 64
     drop_rate: 0.1
     pos_emb_type: SinPosEmb
