@@ -303,14 +303,14 @@ class OctFormerBlock(torch.nn.Module):
     attn = self.attention(self.norm1(data), octree)
     data = data + self.dropout(attn)
     if self.use_ctx:
-      data = self.cross_norm(data)
-      cross_attn = []
+      cross_attn = self.cross_norm(data)
+      cross_attn_list = []
       for i in range(octree.batch_size):
         mask = octree.batch_idx == i
         cross_attn_i, _ = self.cross_attn(
-            query=data[mask].unsqueeze(0), key=context[i], value=context[i])
-        cross_attn.append(cross_attn_i)
-      cross_attn = torch.cat(cross_attn, dim=0)
+            query=cross_attn[mask].unsqueeze(0), key=context[i:i+1], value=context[i:i+1])
+        cross_attn_list.append(cross_attn_i[0])
+      cross_attn = torch.cat(cross_attn_list, dim=0)
       data = data + cross_attn
     ffn = self.mlp(self.norm2(data))
     data = data + self.dropout(ffn)

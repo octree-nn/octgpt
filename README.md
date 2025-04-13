@@ -76,7 +76,7 @@ MODEL.OctGPT.condition_type category \
 MODEL.OctGPT.num_classes 5 \
 MODEL.OctGPT.patch_size 1024 \
 MODEL.OctGPT.dilation 16 \
-DATA.test.filelist data/ShapeNet/filelist/test_${category}.txt
+DATA.test.category ${category}
 ```
 
 ### 2.3 Training
@@ -119,27 +119,18 @@ MODEL.OctGPT.num_classes 5
 Download the pretrained models from [Hugging Face](https://huggingface.co/wst2001/OctGPT) and put them in `saved_ckpt`.
 
 ### 3.2 Text-condition Generation
-1. Generate based on a specific text prompt
+Generate based on a specific text prompt
 ```bash
 python main_octgpt.py \
 --config configs/Objaverse/objaverse_octar_text.yaml \
 SOLVER.run generate \
 SOLVER.logdir logs/obja_text \
 SOLVER.ckpt saved_ckpt/octgpt_objv_text.pth \
-MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
-DATA.test.text_prompt "A chair."
-```
-2. Generate across the dataset
-```bash
-python main_octgpt.py \
---config configs/Objaverse/objaverse_octar_text.yaml \
-SOLVER.run generate \
-SOLVER.logdir logs/obja_text \
-SOLVER.ckpt saved_ckpt/octgpt_objv_text.pth \
-MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
+MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth \
+DATA.test.text_prompt "A 3D model of a Pokémon character."
 ```
 
-### 3.3 Training
+<!-- ### 3.3 Training
 #### 3.3.1 Data Preparation
 We adopt the data filtering and preprocessing pipeline from from [TRELLIS](https://github.com/Microsoft/TRELLIS). Our model is trained on a subset of `ObjaverseXL-sketchfab` containing 16w 3D meshes.
 To replicate our experimental setup, please follow these steps:
@@ -157,11 +148,11 @@ SOLVER.run train \
 SOLVER.gpu 0,1,2,3,4,5,6,7 \
 SOLVER.logdir logs/obja_text \
 MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
-```
+``` -->
 
 ## 4. Citation
 ```bibtex
-@article {Wang2023OctFormer,
+@article {Wei2025OctGPT,
     title      = {OctFormer: Octree-based Transformers for {3D} Point Clouds},
     author     = {Wang, Peng-Shuai},
     journal    = {ACM Transactions on Graphics (SIGGRAPH)},
@@ -169,4 +160,4 @@ MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
     number     = {4},
     year       = {2023},
 }
-   ```
+```

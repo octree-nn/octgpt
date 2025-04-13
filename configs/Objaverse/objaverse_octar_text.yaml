@@ -1,5 +1,5 @@
 BASE:
-  - configs/ShapeNet/shapenet_octar.yaml
+  - configs/ShapeNet/shapenet_uncond.yaml
 
 DATA:
   train:
@@ -20,13 +20,18 @@ DATA:
     text_location: *text_location
     caption: *caption
     shuffle: False
-    # text_prompt: 3D model of a winged female demon
+    text_prompt: A 3D model.
 
     
 MODEL:
   OctGPT:
+    num_embed: 1152
+    patch_size: 1024
+    dilation: 8
     buffer_size: 77
     random_flip: 0.2
+    pos_emb_type: AbsPosEmb
+    norm_type: RMSNorm
     num_iters: [64, 128, 128, 256]
     condition_type: text
     condition_encoder: clip
