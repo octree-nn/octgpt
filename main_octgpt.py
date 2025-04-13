@@ -10,13 +10,13 @@ from utils.expand_ckpt import expand_checkpoint
 from utils.distributed import get_rank
 from models.octgpt import OctGPT
 from models.condition import ImageEncoder, TextEncoder
-from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num, snc_synth_id_to_label_13
+from datasets.shapenet_utils import snc_synth_id_to_label_5, category_5_to_num, snc_synth_id_to_label_13, snc_category_to_synth_id_all
 from tqdm import tqdm
 import copy
 import cv2
 
 
-class OctarSolver(Solver):
+class OctGPTSolver(Solver):
 
   def __init__(self, FLAGS, is_master=True):
     super().__init__(FLAGS, is_master)
@@ -43,14 +43,15 @@ class OctarSolver(Solver):
       self.cond_enc = TextEncoder(flags.OctGPT.condition_encoder)
     else:
       self.cond_enc = None
-    
+
     if self.cond_enc:
       self.cond_enc.cuda(device=self.device)
       self.cond_enc.eval()
       utils.set_requires_grad(self.cond_enc, False)
 
     # load the pretrained vqvae
-    checkpoint = torch.load(flags.vqvae_ckpt, weights_only=True, map_location="cuda")
+    checkpoint = torch.load(
+        flags.vqvae_ckpt, weights_only=True, map_location="cuda")
     vqvae.load_state_dict(checkpoint)
     print("Load VQVAE from", flags.vqvae_ckpt)
 
@@ -78,9 +79,15 @@ class OctarSolver(Solver):
         id_to_label = snc_synth_id_to_label_5
       elif self.FLAGS.MODEL.OctGPT.num_classes == 13:
         id_to_label = snc_synth_id_to_label_13
-      label = [id_to_label[filename.split("/")[0]]
-               for filename in batch['filename']]
+
+      if "category" in batch:
+        label = [id_to_label[snc_category_to_synth_id_all[cat]]
+                 for cat in batch['category']]
+      else:
+        label = [id_to_label[filename.split("/")[0]]
+                 for filename in batch['filename']]
       batch['condition'] = torch.tensor(label, device=self.device)
+
     elif self.condition_type == "image":
       images = batch['image']
       cond = self.cond_enc(images, device=self.device)
@@ -127,29 +134,23 @@ class OctarSolver(Solver):
     self.manual_seed()
     self.config_model()
     self.configure_log(set_writer=False)
-    if self.condition_type != "none":
-      # Walk through the dataset to get the condition
-      self.FLAGS.defrost()
-      self.FLAGS.DATA.test.load_pointcloud = False
-      self.FLAGS.DATA.test.load_sdf = False
-      self.FLAGS.freeze()
-      self.config_dataloader(disable_train_data=True)
+    # self.config_dataloader(disable_train_data=True)
     self.load_checkpoint()
     self.model.eval()
-    category = self.FLAGS.DATA.test.filelist.split("_")[-1][:-4]
+    category = self.FLAGS.DATA.test.get("category")
+
     num_meshes = category_5_to_num[category] if category in category_5_to_num else 10000
     mesh_indices = []
     for i in range(num_meshes):
       mesh_path = os.path.join(self.logdir, f"results/{i}.obj")
       if not os.path.exists(mesh_path):
         mesh_indices.append(i)
-    
+
     for iter in tqdm(range(0, 10000), ncols=80):
       if self.world_size * iter + get_rank() >= len(mesh_indices):
         break
       index = mesh_indices[self.world_size * iter + get_rank()]
       self.generate_step(index)
-      # self.generate_vq_step(index)
 
   def export_results(self, octree_out, index, vq_code=None, image=None, text=None, output_dir="results"):
     # export the octree
@@ -181,24 +182,34 @@ class OctarSolver(Solver):
         save_sdf=self.FLAGS.SOLVER.save_sdf)
     # Save the image
     if image is not None:
-      os.makedirs(os.path.join(self.logdir, f"{output_dir}/images"), exist_ok=True)
-      image[0].save(os.path.join(self.logdir, f"{output_dir}/images/{index}.png"))
+      os.makedirs(os.path.join(
+          self.logdir, f"{output_dir}/images"), exist_ok=True)
+      image[0].save(os.path.join(
+          self.logdir, f"{output_dir}/images/{index}.png"))
     # Save the text:
     if text is not None:
-      os.makedirs(os.path.join(self.logdir, f"{output_dir}/text"), exist_ok=True)
+      os.makedirs(os.path.join(
+          self.logdir, f"{output_dir}/text"), exist_ok=True)
       with open(os.path.join(self.logdir, f"{output_dir}/text/{index}.txt"), "w") as f:
         f.write(text[0] + '\n')
 
   @torch.no_grad()
   def generate_step(self, index):
     # forward the model
-    if self.condition_type != "none":
-      batch = next(self.test_iter)
+    batch = {}
+    if self.condition_type == "category" and self.FLAGS.DATA.test.get("category"):
+      batch['category'] = [self.FLAGS.DATA.test.category] * \
+          self.FLAGS.DATA.test.batch_size
       self.batch_to_cuda(batch)
-      condition=batch['condition']
+      condition = batch['condition']
+    elif self.condition_type == "text" and self.FLAGS.DATA.test.get("text_prompt"):
+      batch['text'] = [self.FLAGS.DATA.test.text_prompt] * \
+          self.FLAGS.DATA.test.batch_size
+      self.batch_to_cuda(batch)
+      condition = batch['condition']
     else:
       condition = None
-    
+
     octree_out = ocnn.octree.init_octree(
         self.depth, self.full_depth, self.FLAGS.DATA.test.batch_size, self.device)
     with torch.autocast("cuda", enabled=self.use_amp):
@@ -207,10 +218,10 @@ class OctarSolver(Solver):
           vqvae=self.vqvae_module, condition=condition)
 
     self.export_results(
-      octree_out, index, vq_code, output_dir=f"results",
-      image=batch['image'] if self.condition_type == 'image' else None,
-      text=batch['text'] if self.condition_type == 'text' else None)
+        octree_out, index, vq_code, output_dir=f"results",
+        # image=batch['image'] if self.condition_type == 'image' else None,
+        text=batch['text'] if self.condition_type == 'text' else None)
 
 
 if __name__ == '__main__':
-  OctarSolver.main()
+  OctGPTSolver.main()

@@ -2,7 +2,7 @@ SOLVER:
   gpu: 0,
   run: train
 
-  logdir: logs/test/shapenet_octar
+  logdir: logs/test/shapenet_octgpt
   max_epoch: 400
   test_every_epoch: 1
   log_per_iter: 50
@@ -45,7 +45,7 @@ DATA:
     distort: &distort False
 
     # data loading
-    location: &location data/ShapeNet/dataset_new
+    location: &location data/ShapeNet/dataset_256
     filelist: &filelist data/ShapeNet/filelist/train_airplane.txt
     load_pointcloud: &load_pointcloud True
     load_sdf: &load_sdf False
@@ -72,6 +72,7 @@ DATA:
     # data loading
     location: *location
     filelist: data/ShapeNet/filelist/test_airplane.txt
+    category: airplane
     batch_size: 1
     load_pointcloud: *load_pointcloud
     load_sdf: *load_sdf
