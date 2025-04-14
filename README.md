@@ -152,12 +152,10 @@ MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
 
 ## 4. Citation
 ```bibtex
-@article {Wei2025OctGPT,
-    title      = {OctFormer: Octree-based Transformers for {3D} Point Clouds},
-    author     = {Wang, Peng-Shuai},
-    journal    = {ACM Transactions on Graphics (SIGGRAPH)},
-    volume     = {42},
-    number     = {4},
-    year       = {2023},
+@article {wei2025octgpt,
+    title      = {OctGPT: Octree-based Multiscale Autoregressive Models for 3D Shape Generation},
+    author     = {Wei, Si-Tong and Wang, Rui-Huan and Zhou, Chuan-Zhi and Chen, Baoquan and Wang Peng-Shuai},
+    journal    = {arXiv preprint arXiv:},
+    year       = {2025},
 }
 ```
