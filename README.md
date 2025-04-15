@@ -4,7 +4,7 @@ This repository contains the implementation of **OctGPT**. The code is
 released under the **MIT license**. 
 
 
-**[OctGPT: Octree-based Multiscale Autoregressive Models for 3D Shape Generation](http://arxiv.org/)**<br/>
+**[OctGPT: Octree-based Multiscale Autoregressive Models for 3D Shape Generation](https://arxiv.org/abs/2504.09975)**<br/>
 Si-Tong Wei, Rui-Huan Wang, Chuan-Zhi Zhou, [Baoquan Chen](https://baoquanchen.info/), [Peng-Shuai Wang](https://wang-ps.github.io/)<br/>
 Accepted by SIGGRAPH 2025
 
@@ -155,7 +155,7 @@ MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
 @article {wei2025octgpt,
     title      = {OctGPT: Octree-based Multiscale Autoregressive Models for 3D Shape Generation},
     author     = {Wei, Si-Tong and Wang, Rui-Huan and Zhou, Chuan-Zhi and Chen, Baoquan and Wang Peng-Shuai},
-    journal    = {arXiv preprint arXiv:},
+    journal    = {arXiv preprint arXiv:2504.09975},
     year       = {2025},
 }
 ```
