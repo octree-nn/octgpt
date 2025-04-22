@@ -106,6 +106,8 @@ We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft
         SOLVER.run train \
         SOLVER.gpu 0,1,2,3 \
         SOLVER.logdir logs/${category} \
+        DATA.train.filelist data/ShapeNet/filelist/train_${category}.txt \
+        DATA.test.filelist data/ShapeNet/filelist/test_${category}.txt \
         MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_uncond_bsq32.pth
     ```
 
@@ -116,6 +118,8 @@ We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft
         SOLVER.run train \
         SOLVER.gpu 0,1,2,3 \
         SOLVER.logdir logs/im5 \
+        DATA.train.filelist data/ShapeNet/filelist/train_im_5.txt \
+        DATA.test.filelist data/ShapeNet/filelist/test_im_5.txt \
         MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_cond_bsq32.pth \
         MODEL.OctGPT.condition_type category \
         MODEL.OctGPT.num_classes 5
