@@ -149,16 +149,16 @@ To replicate our experimental setup, please follow these steps:
 - Place the raw dataset in `data/Objaverse/raw`.
 - Conduct mesh repairing and save the processed meshes to `data/Objaverse/datasets_512`.
 ```bash
-python tools/sample_sdf.py --mode cuda --dataset Objaverse --depth 9
+python tools/sample_sdf.py --mode cpu --dataset Objaverse --depth 9
 ```
 #### 3.3.2 Training Setup
     ```bash
     python main_octgpt.py \
     --config configs/Objaverse/objaverse_octar_text.yaml \
     SOLVER.run train \
-    SOLVER.gpu 0,1,2,3,4,5,6,7 \
+    SOLVER.gpu 0,1,2,3 \
     SOLVER.logdir logs/obja_text \
-    MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth
+    MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth
     ```
 
 ## 4. Citation
