@@ -87,7 +87,7 @@ We provide the pretrained models for unconditional and category-condition genera
 ### 2.3 Training
 #### 2.3.1 Data Preparation
 
-1. Download `ShapeNetCore.v1.zip` (31G) from [ShapeNet](https://shapenet.org/) and place it in `data/ShapeNet/ShapeNetCore.v1.zip`. Download `filelist` from [HuggingFace](https://huggingface.co/wst2001/OctGPT) and place it in `data/ShapeNet/filelist`.
+1. Download `ShapeNetCore.v1.zip` (31G) from [ShapeNet](https://shapenet.org/) and place it in `data/ShapeNet/ShapeNetCore.v1.zip`. Download `ShapeNet` from [HuggingFace](https://huggingface.co/wst2001/OctGPT) and place it in `data/ShapeNet/filelist`.
 
 2. Convert the meshes in `ShapeNetCore.v1` to signed distance fields (SDFs).
 We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft/DualOctreeGNN.git) and [OctFusion](https://github.com/octree-nn/octfusion). We utilize [mesh2sdf](https://github.com/wang-ps/mesh2sdf).
@@ -143,7 +143,7 @@ python main_octgpt.py \
 
 ### 3.3 Training
 #### 3.3.1 Data Preparation
-We adopt the data filtering and preprocessing pipeline from from [LGM](https://github.com/ashawkey/objaverse_filter). Our model is trained on a subset of `Objaverse` containing 4.5w 3D meshes. Text annotations are provided by Cap3D. Download `filelist` from [HuggingFace](https://huggingface.co/wst2001/OctGPT) and place it in `data/Objaverse/filelist`.
+We adopt the data filtering and preprocessing pipeline from from [LGM](https://github.com/ashawkey/objaverse_filter). Our model is trained on a subset of `Objaverse` containing 4.5w 3D meshes. Text annotations are provided by Cap3D. Download `Objaverse` from [HuggingFace](https://huggingface.co/wst2001/OctGPT) and place it in `data/Objaverse/filelist`.
 
 To replicate our experimental setup, please follow these steps:
 - Place the raw dataset in `data/Objaverse/raw`.

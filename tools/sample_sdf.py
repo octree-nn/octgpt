@@ -210,24 +210,28 @@ def process(index, filenames, load_paths, save_paths):
   sample_sdf(voxel_sdf, filename_sdf, pointcloud)
   print(f"Mesh {index}/{len(filenames)} {filename} done")
 
-def get_shapenet_path():
-  load_path = f'data/ShapeNet/ShapeNetCore.v1'
-  save_path = f'data/ShapeNet/datasets_256'
-  existing_files = set(glob.glob(f"{save_path}/*/*.npz"))
-  filelist_path = f'data/ShapeNet/filelist/im5.txt'
+def get_filelist(filelist_path):
   with open(filelist_path, 'r') as f:
     lines = f.readlines()
   lines = [line.strip() for line in lines]
+  return lines
+
+def get_shapenet_path():
+  load_path = f'data/ShapeNet/ShapeNetCore.v1'
+  save_path = f'data/ShapeNet/datasets_256_test'
+  existing_files = set(glob.glob(f"{save_path}/*/*.npz"))
+  lines = get_filelist('data/ShapeNet/filelist/train_im_5.txt') + get_filelist("data/ShapeNet/filelist/test_im_5.txt")
+  
   load_paths, save_paths, filenames = [], [], []
   for line in lines:
-    filename = line.split('/')[-1]
+    filename = line
     if not isinstance(filename, str):
       continue
     if os.path.join(save_path, f"{filename}", "sdf.npz") in existing_files and \
        os.path.join(save_path, f"{filename}", "pointcloud.npz") in existing_files:
       continue
     filenames.append(filename)
-    load_paths.append(os.path.join(load_path, line))
+    load_paths.append(os.path.join(load_path, line, "model.obj"))
     save_paths.append(os.path.join(save_path, f"{filename}"))
   return filenames, load_paths, save_paths
 
@@ -235,20 +239,20 @@ def get_objaverse_path():
   load_path = f'data/Objaverse/raw/glbs'
   save_path = f'data/Objaverse/datasets_512'
   existing_files = set(glob.glob(f"{save_path}/*/*.npz"))
-  filelist_path = f'data/ShapeNet/filelist/im5.txt'
+  filelist_path = f'data/Objaverse/filelist/objaverse_5w.txt'
   with open(filelist_path, 'r') as f:
     lines = f.readlines()
   lines = [line.strip() for line in lines]
   load_paths, save_paths, filenames = [], [], []
   for line in lines:
-    filename = line.split('/')[-1]
+    filename = line
     if not isinstance(filename, str):
       continue
     if os.path.join(save_path, f"{filename}", "sdf.npz") in existing_files and \
        os.path.join(save_path, f"{filename}", "pointcloud.npz") in existing_files:
       continue
     filenames.append(filename)
-    load_paths.append(os.path.join(load_path, line))
+    load_paths.append(os.path.join(load_path, line + ".glb"))
     save_paths.append(os.path.join(save_path, f"{filename}"))
   return filenames, load_paths, save_paths
 
