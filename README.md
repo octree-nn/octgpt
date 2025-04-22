@@ -130,25 +130,25 @@ MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth \
 DATA.test.text_prompt "A 3D model of a Pokémon character."
 ```
 
-<!-- ### 3.3 Training
+### 3.3 Training
 #### 3.3.1 Data Preparation
-We adopt the data filtering and preprocessing pipeline from from [TRELLIS](https://github.com/Microsoft/TRELLIS). Our model is trained on a subset of `ObjaverseXL-sketchfab` containing 16w 3D meshes.
+We adopt the data filtering and preprocessing pipeline from from [LGM](https://github.com/ashawkey/objaverse_filter). Our model is trained on a subset of `Objaverse` containing 4.5w 3D meshes. Text annotations are provided by Cap3D. Download `filelist` from [HuggingFace](https://huggingface.co/wst2001/OctGPT) and place it in `data/Objaverse/filelist`.
+
 To replicate our experimental setup, please follow these steps:
-- Place the raw dataset in `data/Objaverse/ObjaverseXL_sketchfab/raw`.
-- Store the metadata file in `data/Objaverse/ObjaverseXL_sketchfab/metadata.csv`.
-- Conduct mesh repairing and save the processed meshes to `data/Objaverse/ObjaverseXL_sketchfab/datasets_512`.
+- Place the raw dataset in `data/Objaverse/raw`.
+- Conduct mesh repairing and save the processed meshes to `data/Objaverse/datasets_512`.
 ```bash
 python tools/sample_sdf.py --mode cuda --dataset Objaverse --depth 9
 ```
 #### 3.3.2 Training Setup
-```bash
-python main_octgpt.py \
---config configs/Objaverse/objaverse_octar_text.yaml \
-SOLVER.run train \
-SOLVER.gpu 0,1,2,3,4,5,6,7 \
-SOLVER.logdir logs/obja_text \
-MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth \
-``` -->
+    ```bash
+    python main_octgpt.py \
+    --config configs/Objaverse/objaverse_octar_text.yaml \
+    SOLVER.run train \
+    SOLVER.gpu 0,1,2,3,4,5,6,7 \
+    SOLVER.logdir logs/obja_text \
+    MODEL.vqvae_ckpt saved_ckpt/vqvae_huge_objv_bsq64.pth
+    ```
 
 ## 4. Citation
 ```bibtex

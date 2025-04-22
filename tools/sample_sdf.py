@@ -232,20 +232,23 @@ def get_shapenet_path():
   return filenames, load_paths, save_paths
 
 def get_objaverse_path():
-  load_path = f'data/Objaverse/ObjaverseXL_sketchfab'
-  save_path = f'data/Objaverse/ObjaverseXL_sketchfab/datasets_512'
+  load_path = f'data/Objaverse/raw/glbs'
+  save_path = f'data/Objaverse/datasets_512'
   existing_files = set(glob.glob(f"{save_path}/*/*.npz"))
-  metadata_path = 'data/Objaverse/filelist/ObjaverseXL_sketchfab.csv'
-  metadata = pd.read_csv(metadata_path)
+  filelist_path = f'data/ShapeNet/filelist/im5.txt'
+  with open(filelist_path, 'r') as f:
+    lines = f.readlines()
+  lines = [line.strip() for line in lines]
   load_paths, save_paths, filenames = [], [], []
-  for local_path, filename in zip(metadata['local_path'], metadata['sha256']):
-    if not isinstance(local_path, str):
+  for line in lines:
+    filename = line.split('/')[-1]
+    if not isinstance(filename, str):
       continue
     if os.path.join(save_path, f"{filename}", "sdf.npz") in existing_files and \
        os.path.join(save_path, f"{filename}", "pointcloud.npz") in existing_files:
       continue
     filenames.append(filename)
-    load_paths.append(os.path.join(load_path, local_path))
+    load_paths.append(os.path.join(load_path, line))
     save_paths.append(os.path.join(save_path, f"{filename}"))
   return filenames, load_paths, save_paths
 

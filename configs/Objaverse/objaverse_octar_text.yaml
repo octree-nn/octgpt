@@ -5,17 +5,17 @@ DATA:
   train:
     name: &name objaverse
     points_scale: &points_scale 1.0
-    location: &location data/Objaverse/ObjaverseXL_sketchfab/datasets_512
-    filelist: &filelist data/Objaverse/filelist/ObjaverseXL_sketchfab.txt
+    location: &location data/Objaverse/datasets_512
+    filelist: &filelist data/Objaverse/filelist/objaverse_5w_train.txt
     load_text: &load_text True
-    text_location: &text_location data/Objaverse/filelist/ObjaverseXL_sketchfab.csv
-    caption: &caption trellis
+    text_location: &text_location data/Objaverse/filelist/Cap3D_automated_Objaverse_highquality.csv
+    caption: &caption cap3d
 
   test:
     name: *name
     points_scale: *points_scale
     location: *location
-    filelist: data/Objaverse/filelist/ObjaverseXL_sketchfab_test.txt
+    filelist: data/Objaverse/filelist/objaverse_5w_test.txt
     load_text: *load_text
     text_location: *text_location
     caption: *caption
