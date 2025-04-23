@@ -105,7 +105,7 @@ We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft
         --config configs/ShapeNet/shapenet_uncond.yaml \
         SOLVER.run train \
         SOLVER.gpu 0,1,2,3 \
-        SOLVER.logdir logs/${category} \
+        SOLVER.logdir logs/octgpt_${category} \
         DATA.train.filelist data/ShapeNet/filelist/train_${category}.txt \
         DATA.test.filelist data/ShapeNet/filelist/test_${category}.txt \
         MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_uncond_bsq32.pth
@@ -117,12 +117,23 @@ We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft
         --config configs/ShapeNet/shapenet_uncond.yaml \
         SOLVER.run train \
         SOLVER.gpu 0,1,2,3 \
-        SOLVER.logdir logs/im5 \
+        SOLVER.logdir logs/octgpt_im_5 \
         DATA.train.filelist data/ShapeNet/filelist/train_im_5.txt \
         DATA.test.filelist data/ShapeNet/filelist/test_im_5.txt \
         MODEL.vqvae_ckpt saved_ckpt/vqvae_large_im5_cond_bsq32.pth \
         MODEL.OctGPT.condition_type category \
         MODEL.OctGPT.num_classes 5
+    ```
+
+3. VQVAE
+    ```bash
+    python main_vae.py \
+    --config configs/ShapeNet/shapenet_vae.yaml \
+    SOLVER.run train \
+    SOLVER.gpu 0,1,2,3 \
+    SOLVER.logdir logs/vqvae_im_5 \
+    DATA.train.filelist data/ShapeNet/filelist/train_im_5.txt \
+    DATA.test.filelist data/ShapeNet/filelist/test_im_5.txt
     ```
 
 ## 3. Objaverse
@@ -152,6 +163,7 @@ To replicate our experimental setup, please follow these steps:
 python tools/sample_sdf.py --mode cpu --dataset Objaverse --depth 9
 ```
 #### 3.3.2 Training Setup
+1. Text-condition Generation
     ```bash
     python main_octgpt.py \
     --config configs/Objaverse/objaverse_octar_text.yaml \
@@ -161,6 +173,15 @@ python tools/sample_sdf.py --mode cpu --dataset Objaverse --depth 9
     MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth
     ```
 
+2. VQVAE
+3. VQVAE
+    ```bash
+    python main_vae.py \
+    --config configs/Objaverse/objaverse_vae.yaml \
+    SOLVER.run train \
+    SOLVER.gpu 0,1,2,3 \
+    SOLVER.logdir logs/vqvae_im_5 \
+    ```
 ## 4. Citation
 ```bibtex
 @inproceedings {wei2025octgpt,

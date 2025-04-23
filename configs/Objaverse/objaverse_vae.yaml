@@ -10,9 +10,9 @@ DATA:
     name: &name objaverse
 
     # octree building
-    depth: &depth 9
+    depth: &depth 8
     full_depth: &full_depth 3
-    points_scale: &points_scale 0.5  # the scale of point clouds
+    points_scale: &points_scale 1.0  # the scale of point clouds
 
     # sdf & color samples
     volume_sample_num: &volume_sample_num 10000
@@ -20,8 +20,8 @@ DATA:
     tsdf: &tsdf 0.05
 
     # data loading
-    location: &location data/Objaverse/ObjaverseXL_sketchfab/datasets_512
-    filelist: data/Objaverse/ObjaverseXL_sketchfab/filelist/train_obja.txt
+    location: &location data/Objaverse/datasets_512
+    filelist: data/Objaverse/filelist/objaverse_5w_train.txt
 
   test:
     name: *name
@@ -38,13 +38,13 @@ DATA:
 
     # data loading
     location: *location
-    filelist: data/Objaverse/ObjaverseXL_sketchfab/filelist/test_obja.txt
+    filelist: data/Objaverse/filelist/objaverse_5w_test.txt
 
 
 MODEL:
-  name: vqvae_huge
+  name: vqvae_large
   in_channels: 4
-  embedding_channels: 64
+  embedding_channels: 32
   quantizer_type: bsq
   feature: ND
   rnd_flip: 0.0
