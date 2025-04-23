@@ -44,7 +44,7 @@ DATA:
     load_pointcloud: True
     load_sdf: True
     sdf_file_num: &sdf_file_num 0
-    batch_size: 1 s
+    batch_size: 1
     shuffle: True
 
   test:
