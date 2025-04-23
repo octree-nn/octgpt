@@ -128,12 +128,12 @@ We use the same data preparation as [DualOctreeGNN](https://github.com/microsoft
 3. VQVAE
     ```bash
     python main_vae.py \
-    --config configs/ShapeNet/shapenet_vae.yaml \
-    SOLVER.run train \
-    SOLVER.gpu 0,1,2,3 \
-    SOLVER.logdir logs/vqvae_im_5 \
-    DATA.train.filelist data/ShapeNet/filelist/train_im_5.txt \
-    DATA.test.filelist data/ShapeNet/filelist/test_im_5.txt
+        --config configs/ShapeNet/shapenet_vae.yaml \
+        SOLVER.run train \
+        SOLVER.gpu 0,1,2,3 \
+        SOLVER.logdir logs/vqvae_im_5 \
+        DATA.train.filelist data/ShapeNet/filelist/train_im_5.txt \
+        DATA.test.filelist data/ShapeNet/filelist/test_im_5.txt
     ```
 
 ## 3. Objaverse
@@ -142,15 +142,15 @@ Download the pretrained models from [Hugging Face](https://huggingface.co/wst200
 
 ### 3.2 Text-condition Generation
 Generate based on a specific text prompt
-```bash
-python main_octgpt.py \
-    --config configs/Objaverse/objaverse_octar_text.yaml \
-    SOLVER.run generate \
-    SOLVER.logdir logs/obja_text \
-    SOLVER.ckpt saved_ckpt/octgpt_objv_text.pth \
-    MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth \
-    DATA.test.text_prompt "A 3D model of a Pokémon character."
-```
+    ```bash
+    python main_octgpt.py \
+        --config configs/Objaverse/objaverse_octar_text.yaml \
+        SOLVER.run generate \
+        SOLVER.logdir logs/obja_text \
+        SOLVER.ckpt saved_ckpt/octgpt_objv_text.pth \
+        MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth \
+        DATA.test.text_prompt "A 3D model of a Pokémon character."
+    ```
 
 ### 3.3 Training
 #### 3.3.1 Data Preparation
@@ -166,21 +166,20 @@ python tools/sample_sdf.py --mode cpu --dataset Objaverse --depth 9
 1. Text-condition Generation
     ```bash
     python main_octgpt.py \
-    --config configs/Objaverse/objaverse_octar_text.yaml \
-    SOLVER.run train \
-    SOLVER.gpu 0,1,2,3 \
-    SOLVER.logdir logs/obja_text \
-    MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth
+        --config configs/Objaverse/objaverse_octar_text.yaml \
+        SOLVER.run train \
+        SOLVER.gpu 0,1,2,3 \
+        SOLVER.logdir logs/obja_text \
+        MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth
     ```
 
 2. VQVAE
-3. VQVAE
     ```bash
     python main_vae.py \
-    --config configs/Objaverse/objaverse_vae.yaml \
-    SOLVER.run train \
-    SOLVER.gpu 0,1,2,3 \
-    SOLVER.logdir logs/vqvae_im_5 \
+        --config configs/Objaverse/objaverse_vae.yaml \
+        SOLVER.run train \
+        SOLVER.gpu 0,1,2,3 \
+        SOLVER.logdir logs/vqvae_im_5 \
     ```
 ## 4. Citation
 ```bibtex
