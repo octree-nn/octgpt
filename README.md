@@ -19,6 +19,7 @@ Accepted by SIGGRAPH 2025
   - [3. Objaverse](#3-objaverse)
     - [3.1 Download pre-trained models](#31-download-pre-trained-models)
     - [3.2 Text-condition Generation](#32-text-condition-generation)
+    - [3.3 Training](#33-training)
   - [4. Citation](#4-citation)
 
 
@@ -142,15 +143,16 @@ Download the pretrained models from [Hugging Face](https://huggingface.co/wst200
 
 ### 3.2 Text-condition Generation
 Generate based on a specific text prompt
-    ```bash
-    python main_octgpt.py \
-        --config configs/Objaverse/objaverse_octar_text.yaml \
-        SOLVER.run generate \
-        SOLVER.logdir logs/obja_text \
-        SOLVER.ckpt saved_ckpt/octgpt_objv_text.pth \
-        MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth \
-        DATA.test.text_prompt "A 3D model of a Pokémon character."
-    ```
+
+```bash
+python main_octgpt.py \
+    --config configs/Objaverse/objaverse_octar_text.yaml \
+    SOLVER.run generate \
+    SOLVER.logdir logs/obja_text \
+    SOLVER.ckpt saved_ckpt/octgpt_objv_text.pth \
+    MODEL.vqvae_ckpt saved_ckpt/vqvae_large_objv_bsq32.pth \
+    DATA.test.text_prompt "A 3D model of a Pokémon character."
+```
 
 ### 3.3 Training
 #### 3.3.1 Data Preparation
