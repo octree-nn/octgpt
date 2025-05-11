@@ -38,32 +38,6 @@ class VAESolver(Solver):
     output['vae_loss'] = self.FLAGS.LOSS.vae_weight * model_out['vae_loss']
     return output
 
-  def compute_loss(self, batch, model_out):
-    # octree loss
-    output = dict()
-    wo = [1.0] * 8 + [0.1] * 3  # lower weights for deep layers
-    logits = model_out['logits']
-    for d in logits.keys():
-      label_gt = model_out['octree_out'].nempty_mask(d).long()
-      output['loss_%d' % d] = F.cross_entropy(logits[d], label_gt) * wo[d]
-      output['accu_%d' % d] = logits[d].argmax(1).eq(label_gt).float().mean()
-
-    # regression loss
-    wg, ws, wm = 1.0, 200.0, 1.0
-    flags = self.FLAGS.LOSS
-    mpus = model_out['mpus']
-    for d in mpus:
-      sdf = mpus[d]
-      grad = ognn.loss.compute_gradient(sdf, batch['pos'])[:, :3]
-      grad_loss = (grad - batch['grad']).pow(2).mean() * (wg * wm)
-      sdf_loss = (sdf - batch['sdf']).pow(2).mean() * (ws * wm)
-      output['grad_loss_%d' % d] = grad_loss
-      output['sdf_loss_%d' % d] = sdf_loss
-
-    # vae loss
-    output['vae_loss'] = flags.vae_weight * model_out['vae_loss']
-    return output
-
   def compute_loss(self, batch, model_out, reg_loss_type):
     if self.FLAGS.LOSS.name == 'shape':
       return self.compute_shape_loss(batch, model_out, reg_loss_type)
