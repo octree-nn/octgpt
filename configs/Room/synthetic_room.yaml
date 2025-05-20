@@ -3,7 +3,7 @@ BASE:
 
 SOLVER:
   logdir: logs/room/room
-  max_epoch: 900
+  max_epoch: 600
 
   type: adamw
   lr: 0.00025
@@ -17,6 +17,7 @@ DATA:
     # data loading
     location: data/room/synthetic_room_dataset
     filelist: data/room/filelist/train.txt
+    max_points: &max_points 16000
     load_occu: True
     batch_size: 2
 
@@ -28,6 +29,7 @@ DATA:
     # data loading
     location: data/room/synthetic_room_dataset
     filelist: data/room/filelist/val.txt
+    max_points: *max_points
     load_occu: True
     batch_size: 1
     shuffle: False

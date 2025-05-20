@@ -1,5 +1,5 @@
 BASE:
-  - configs/ShapeNet/shapenet_octar.yaml
+  - configs/ShapeNet/shapenet_uncond.yaml
 
 DATA:
   train:
@@ -13,5 +13,18 @@ DATA:
     name: *name
     points_scale: *points_scale
     location: *location
-    filelist: data/room/filelist/val.txt
+    filelist: data/room/filelist/test.txt
     load_occu: *load_occu
+
+MODEL:
+  OctGPT:
+    num_embed: 768
+    num_heads: 8
+    num_blocks: 24
+    num_classes: 1
+    split_size: 2
+    patch_size: 1024
+    dilation: 4
+    pos_emb_type: AbsPosEmb
+    norm_type: RMSNorm
+    use_swin: True

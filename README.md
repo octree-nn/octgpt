@@ -20,7 +20,8 @@ Accepted by SIGGRAPH 2025
     - [3.1 Download pre-trained models](#31-download-pre-trained-models)
     - [3.2 Text-condition Generation](#32-text-condition-generation)
     - [3.3 Training](#33-training)
-  - [4. Citation](#4-citation)
+  - [4. Scene Generation](#4-scene-generation)
+  - [5. Citation](#4-citation)
 
 
 ## 1. Installation
@@ -156,7 +157,7 @@ python main_octgpt.py \
 
 ### 3.3 Training
 #### 3.3.1 Data Preparation
-We adopt the data filtering and preprocessing pipeline from from [LGM](https://github.com/ashawkey/objaverse_filter). Our model is trained on a subset of `Objaverse` containing 4.5w 3D meshes. Text annotations are provided by Cap3D. Download `Objaverse` from [HuggingFace](https://huggingface.co/wst2001/OctGPT) and place it in `data/Objaverse/filelist`.
+We adopt the data filtering and preprocessing pipeline from [LGM](https://github.com/ashawkey/objaverse_filter). Our model is trained on a subset of `Objaverse` containing 4.5w 3D meshes. Text annotations are provided by Cap3D. Download `Objaverse` from [HuggingFace](https://huggingface.co/wst2001/OctGPT) and place it in `data/Objaverse/filelist`.
 
 To replicate our experimental setup, please follow these steps:
 - Place the raw dataset in `data/Objaverse/raw`.
@@ -183,7 +184,48 @@ python tools/sample_sdf.py --mode cpu --dataset Objaverse --depth 9
         SOLVER.gpu 0,1,2,3 \
         SOLVER.logdir logs/vqvae_im_5 \
     ```
-## 4. Citation
+
+## 4. Scene Generation
+
+### 4.1 Download pre-trained models
+Download the pretrained models from [Hugging Face](https://huggingface.co/wst2001/OctGPT) and put them in `saved_ckpt`.
+
+### 4.2 Scene-level generation
+
+```bash
+python main_octgpt.py \
+    --config configs/Room/room_octar.yaml \
+    SOLVER.run generate \
+    SOLVER.logdir logs/room \
+    SOLVER.ckpt saved_ckpt/octgpt_room.pth \
+    MODEL.vqvae_ckpt saved_ckpt/vqvae_large_room_bsq32.pth
+```
+
+### 4.3 Training
+
+#### 4.3.1 Data Preparation
+We use the same datasets as [DualOctreeGNN](https://github.com/microsoft/DualOctreeGNN), and the Room datasets can be downloaded from [here](https://s3.eu-central-1.amazonaws.com/avg-projects/convolutional_occupancy_networks/data/room_watertight_mesh.zip)(90G). Put the dataset in `data/room`.
+
+#### 4.3.2 Training Setup
+1. Scene generation
+    ```bash
+    python main_octgpt.py \
+        --config configs/Room/room_octar.yaml \
+        SOLVER.run train \
+        SOLVER.gpu 0,1,2,3 \
+        SOLVER.logdir logs/room \
+        MODEL.vqvae_ckpt saved_ckpt/vqvae_large_room_bsq32.pth
+    ```
+
+2. VQVAE
+    ```bash
+    python main_vae.py \
+        --config configs/Room/synthetic_room.yaml \
+        SOLVER.run train \
+        SOLVER.gpu 0,1,2,3 \
+        SOLVER.logdir logs/vqvae_room
+    ```
+## 5. Citation
 ```bibtex
 @inproceedings {wei2025octgpt,
     title      = {OctGPT: Octree-based Multiscale Autoregressive Models
