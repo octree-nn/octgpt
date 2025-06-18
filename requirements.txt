@@ -24,7 +24,7 @@ kornia
 einops
 pandas
 transformers
-diso
+diso==0.1.4
 objaverse
 pymcubes
 git+https://github.com/eliphatfs/cumesh2sdf.git
